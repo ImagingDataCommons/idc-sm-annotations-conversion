@@ -1,30 +1,16 @@
 from io import BytesIO
 import os
+import tarfile
 
 from google.cloud import bigquery
 from google.cloud import storage
-
+import pandas as pd
 import pydicom
 
 
 def run():
-    if 'GOOGLE_APPLICATION_CREDENTIALS' not in os.environ:
-        raise RuntimeError(
-            """
-            You must provide the path to a credentials file to access Google
-            via the 'GOOGLE_APPLICATION_CREDENTIALS' environment variable.
-            To obtain this file, install the gcloud command line tool, and then
-            run:
-
-                gcloud auth application-default login
-
-            This will create a .json file, whose path you should set as the
-            value of the environment variable.
-            """
-        )
-
     # Setup project and authenticate
-    project_id = "idc-demo"
+    project_id = "idc-etl-processing"
     os.environ["GCP_PROJECT_ID"] = project_id
 
     # Access bucket containing annotations
@@ -83,6 +69,14 @@ def run():
         dcm_blob = public_bucket.get_blob(f'{ins_uuid}.dcm')
         dcm_bytes = dcm_blob.download_as_bytes()
         dcm = pydicom.dcmread(BytesIO(dcm_bytes))
+
+        # Read the annotations from the tarfile of CSVs
+        with tarfile.open(fileobj=BytesIO(ann_bytes), mode='r:gz') as tar:
+            for member in tar.getmembers():
+                if member.isfile():
+                    f = tar.extractfile(member)
+                    df = pd.read_csv(f)
+                    print(df.columns)
 
         break
 
