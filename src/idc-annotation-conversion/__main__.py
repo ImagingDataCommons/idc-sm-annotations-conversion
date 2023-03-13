@@ -85,3 +85,7 @@ def run():
         dcm = pydicom.dcmread(BytesIO(dcm_bytes))
 
         break
+
+
+if __name__ == "__main__":
+    run()

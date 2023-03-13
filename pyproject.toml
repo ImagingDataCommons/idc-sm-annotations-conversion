@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "tcga-annotation-conversion"
+name = "idc-annotation-conversion"
 version = "0.1.0"
 description = "Python code for converting TCGA annotations into DICOM format."
 authors = ["Chris Bridge <cbridge@mgh.harvard.edu>"]
