@@ -4,10 +4,10 @@ version = "0.1.0"
 description = "Python code for converting TCGA annotations into DICOM format."
 authors = ["Chris Bridge <cbridge@mgh.harvard.edu>"]
 readme = "README.md"
-packages = [{include = "idc_path_annotations"}]
+packages = [{include = "idc-annotation-conversion", from = "src" }]
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = "^3.9"
 pydicom = "^2.3.1"
 highdicom = "^0.20.0"
 pycrumbs = "^0.1.3"
