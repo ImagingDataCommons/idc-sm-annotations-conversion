@@ -1,3 +1,4 @@
+import logging
 from os import PathLike
 from socket import gethostname
 from typing import Iterable, Sequence, Tuple, Union
@@ -223,6 +224,7 @@ def convert_annotations(
             axes[0].imshow(segmentation_frame_mask)
             plt.show()
 
+    logging.info(f"Parsed {len(graphic_data)} annotations.")
     tile_positions = compute_tile_positions(source_image_metadata)
     segmentation_tiles = disassemble_total_pixel_matrix(
         total_pixel_matrix=segmentation_mask,
@@ -241,6 +243,7 @@ def convert_annotations(
     finding_category = Code("91723000", "SCT", "Anatomical Stucture")
     finding_type = Code("84640000", "SCT", "Nucleus")
 
+    logging.info("Creating annotation.")
     group = hd.ann.AnnotationGroup(
         number=1,
         uid=hd.UID(),
@@ -274,6 +277,7 @@ def convert_annotations(
         device_serial_number=gethostname()
     )
 
+    logging.info("Creating segmentation.")
     segment_description = hd.seg.SegmentDescription(
         segment_number=1,
         segment_label='Nuclei',

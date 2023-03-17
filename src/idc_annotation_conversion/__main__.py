@@ -1,5 +1,7 @@
 from io import BytesIO, BufferedReader
 from itertools import islice
+import logging
+from pathlib import Path
 import os
 import tarfile
 from typing import List, Generator, Optional
@@ -71,12 +73,21 @@ def iter_csvs(ann_blob: storage.Blob) -> Generator[BufferedReader, None, None]:
     type=int,
     help="Number to process per collection. All by default.",
 )
+@click.option(
+    "-o",
+    "--output-dir",
+    type=click.Path(path_type=Path, file_okay=False),
+    help="Output directory",
+)
 def run(
     collections: Optional[List[str]],
     number: Optional[int] = None,
+    output_dir: Optional[Path] = None,
 ):
     # Use all collections if none specified
     collections = collections or COLLECTIONS
+
+    logging.basicConfig(level=logging.INFO)
 
     # Setup project and authenticate
     os.environ["GCP_PROJECT_ID"] = cloud_config.GCP_PROJECT_ID
@@ -88,6 +99,10 @@ def run(
 
     # Setup bigquery client
     bq_client = bigquery.Client(cloud_config.GCP_PROJECT_ID)
+
+    # Create output directory
+    if output_dir is not None:
+        output_dir.mkdir(exist_ok=True)
 
     # Loop over requested collections
     for collection in collections:
@@ -110,8 +125,7 @@ def run(
             # eg TCGA-05-4244-01Z-00-DX1, d4ff32cd-38cf-40ea-8213-45c2b100ac01
             container_id, crdc_instance_uuid = filename.split('.')
 
-            print(container_id)
-            print(crdc_instance_uuid)
+            logging.info(f"Processing container: {container_id}")
 
             selection_query = f"""
                 SELECT
@@ -126,7 +140,6 @@ def run(
             """
             selection_result = bq_client.query(selection_query)
             selection_df = selection_result.result().to_dataframe()
-            print(selection_df)
 
             # Choose the instance uid as one with most frames (highest res)
             ins_uuid = selection_df.crdc_instance_uuid.iloc[-1]
@@ -143,6 +156,15 @@ def run(
                 annotation_csvs=iter_csvs(ann_blob),
                 source_image_metadata=dcm_meta,
             )
+            if output_dir is not None:
+                ann_path = output_dir / f"{container_id}_ann.dcm"
+                seg_path = output_dir / f"{container_id}_seg.dcm"
+
+                logging.info(f"Writing annotation to {str(ann_path)}.")
+                ann_dcm.save_as(ann_path)
+
+                logging.info(f"Writing segmentation to {str(seg_path)}.")
+                seg_dcm.save_as(seg_path)
 
 
 if __name__ == "__main__":
