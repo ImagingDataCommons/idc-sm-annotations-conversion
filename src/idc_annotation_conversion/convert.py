@@ -1,32 +1,133 @@
+from os import PathLike
 from socket import gethostname
 from pathlib import Path
+from typing import Iterable, Sequence, Tuple, Union
 
 import highdicom as hd
 import mahotas as mh
 import numpy as np
 import pandas as pd
-import typer
-from matplotlib import pyplot as plt
-from pydicom import dcmread
+# from matplotlib import pyplot as plt
+from pydicom import dcmread, Dataset
 from pydicom.sr.codedict import codes
 from pydicom.sr.coding import Code
 from pydicom.uid import JPEGLSLossless
 from shapely.geometry.polygon import Polygon
 
-from tumor_classification.utils import (
-    compute_tile_positions,
-    destruct_total_pixel_matrix,
-)
+
+def compute_tile_positions(source_image: Dataset) -> np.ndarray:
+    """Compute the positions of each frame within the total pixel matrix.
+    Parameters
+    ----------
+    source_image : pydicom.Dataset
+        Metadata of a tiled image
+    Returns
+    -------
+    numpy.ndarray
+        (Column, Row) position of each frame in the total pixel matrix in pixel
+        unit. The top left frame is located at (1, 1).
+    """
+    if hasattr(source_image, "PerFrameFunctionalGroupsSequence"):
+        plane_positions = [
+            hd.PlanePositionSequence.from_sequence(
+                frame_item.PlanePositionSlideSequence
+            )
+            for frame_item in source_image.PerFrameFunctionalGroupsSequence
+        ]
+    else:
+        plane_positions = hd.utils.compute_plane_position_slide_per_frame(
+            source_image
+        )
+    return np.array(
+        [
+            (
+                int(seq[0].ColumnPositionInTotalImagePixelMatrix),
+                int(seq[0].RowPositionInTotalImagePixelMatrix),
+            )
+            for seq in plane_positions
+        ],
+        dtype=int,
+    )
 
 
-def main(annotation_dir: Path, image_dir: Path, debug: bool = False):
-    image_metadata = [
-        dcmread(f, stop_before_pixels=True)
-        for f in image_dir.glob('**/DCM*')
-        if f.is_file()
-    ]
-    image_metadata.sort(key=lambda md: int(md.NumberOfFrames))
-    source_image_metadata = image_metadata[-1]
+def disassemble_total_pixel_matrix(
+    total_pixel_matrix: np.ndarray,
+    tile_positions: Sequence[Tuple[int, int]],
+    rows: int,
+    columns: int,
+) -> np.ndarray:
+    """Disassemble a total pixel matrix into individual tiles.
+    Parameters
+    ----------
+    total_pixel_matrix: numpy.ndarray
+        Total pixel matrix
+    tile_positions: Sequence[Tuple[int, int]]
+        Column, Row position of each tile relative to the slide
+    rows: int
+        Number of rows per tile
+    columns: int
+        Number of columns per tile
+    Returns
+    -------
+    numpy.ndarray
+        Stacked image tiles
+    """
+    tiles = []
+    if total_pixel_matrix.ndim == 3:
+        tile_shape = (rows, columns, total_pixel_matrix.shape[-1])
+    elif total_pixel_matrix.ndim == 2:
+        tile_shape = (rows, columns)
+    else:
+        raise ValueError(
+            "Total pixel matrix has unexpected number of dimensions."
+        )
+    for row_offset, column_offset in tile_positions:
+        tile = np.zeros(tile_shape, dtype=total_pixel_matrix.dtype)
+        pixel_array = total_pixel_matrix[
+            row_offset : (row_offset + rows),
+            column_offset : (column_offset + columns),
+            ...,
+        ]
+        tile[
+            0 : pixel_array.shape[0], 0 : pixel_array.shape[1], ...
+        ] = pixel_array
+        tiles.append(tile)
+    return np.stack(tiles)
+
+
+def convert_annotations(
+    annotation_csvs: Iterable[Union[str, PathLike]],
+    source_image_metadata: Dataset,
+    debug: bool = False,
+):
+    """Convert an annotation into DICOM format.
+
+    Specifically, a bulk microscopy annotation (vector) and segmentation image
+    (raster) are created.
+
+    Parameters
+    ----------
+    annotation_csvs: Iterable[Union[str, os.PathLike]]
+        Iterable over pathlike objects, each representing the path to a
+        CSV-format file containing an annotation for this image.
+    source_image_metadata: pydicom.Dataset
+        Pydicom dataset containing the metadata of the image (already converted
+        to DICOM format). Note that this should be the metadata of the image
+        at full resolution. This can be the full image dataset, but the
+        PixelData attribute is not required.
+    debug: bool
+        Show visualizations using matplotlib for debugging.
+
+    Returns
+    -------
+    annotation: pydicom.Dataset:
+        DICOM bulk microscopy annotation encoding the original annotations in
+        vector format.
+    segmentation: pydicom.Dataset:
+        DICOM segmentation image encoding the original annotations in raster
+        format.
+
+    """
 
     image_orientation = source_image_metadata.ImageOrientationSlide
     origin = source_image_metadata.TotalPixelMatrixOriginSequence[0]
@@ -58,7 +159,7 @@ def main(annotation_dir: Path, image_dir: Path, debug: bool = False):
         ),
         dtype=bool
     )
-    for f in annotation_dir.glob('**/*features.csv'):
+    for f in annotation_csvs:
         df = pd.read_csv(f)
         if debug:
             fig, axes = plt.subplots(1, 2)
@@ -121,7 +222,7 @@ def main(annotation_dir: Path, image_dir: Path, debug: bool = False):
             plt.show()
 
     tile_positions = compute_tile_positions(source_image_metadata)
-    segmentation_tiles = destruct_total_pixel_matrix(
+    segmentation_tiles = disassemble_total_pixel_matrix(
         total_pixel_matrix=segmentation_mask,
         tile_positions=tile_positions,
         rows=source_image_metadata.Rows,
@@ -170,7 +271,6 @@ def main(annotation_dir: Path, image_dir: Path, debug: bool = False):
         software_versions='1.0',
         device_serial_number=gethostname()
     )
-    annotations.save_as('/tmp/annotations.dcm')
 
     segment_description = hd.seg.SegmentDescription(
         segment_number=1,
@@ -196,8 +296,5 @@ def main(annotation_dir: Path, image_dir: Path, debug: bool = False):
         device_serial_number=gethostname(),
         transfer_syntax_uid=JPEGLSLossless,
     )
-    segmentation.save_as('/tmp/segmentation.dcm')
 
-
-if __name__ == '__main__':
-    typer.run(main)
+    return annotations, segmentation
