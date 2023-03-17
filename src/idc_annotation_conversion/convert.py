@@ -1,6 +1,5 @@
 from os import PathLike
 from socket import gethostname
-from pathlib import Path
 from typing import Iterable, Sequence, Tuple, Union
 
 import highdicom as hd
@@ -8,7 +7,7 @@ import mahotas as mh
 import numpy as np
 import pandas as pd
 # from matplotlib import pyplot as plt
-from pydicom import dcmread, Dataset
+from pydicom import Dataset
 from pydicom.sr.codedict import codes
 from pydicom.sr.coding import Code
 from pydicom.uid import JPEGLSLossless
@@ -84,12 +83,12 @@ def disassemble_total_pixel_matrix(
     for row_offset, column_offset in tile_positions:
         tile = np.zeros(tile_shape, dtype=total_pixel_matrix.dtype)
         pixel_array = total_pixel_matrix[
-            row_offset : (row_offset + rows),
-            column_offset : (column_offset + columns),
+            row_offset: (row_offset + rows),
+            column_offset: (column_offset + columns),
             ...,
         ]
         tile[
-            0 : pixel_array.shape[0], 0 : pixel_array.shape[1], ...
+            0:pixel_array.shape[0], 0:pixel_array.shape[1], ...
         ] = pixel_array
         tiles.append(tile)
     return np.stack(tiles)
@@ -169,7 +168,10 @@ def convert_annotations(
             max_offsets = np.zeros((1, 2), dtype=np.float32)
 
         for i, (index, values) in enumerate(df.iterrows()):
-            points = np.array(values.Polygon[1:-1].split(':'), dtype=np.float32)
+            points = np.array(
+                values.Polygon[1:-1].split(':'),
+                dtype=np.float32
+            )
             n = len(points) // 2
             coordinates_image = points.reshape(n, 2)
             if coordinates_image.shape[0] < 3:

@@ -99,7 +99,7 @@ def run(
                 continue
 
             # Massage the blob name to derive container information
-            # e.g. TCGA-05-4244-01Z-00-DX1.d4ff32cd-38cf-40ea-8213-45c2b100ac01
+            # eg TCGA-05-4244-01Z-00-DX1.d4ff32cd-38cf-40ea-8213-45c2b100ac01
             filename = (
                 ann_blob.name
                 .replace(prefix, '')
@@ -107,7 +107,7 @@ def run(
                 .replace('.svs.tar.gz', '')
             )
 
-            # e.g. TCGA-05-4244-01Z-00-DX1, d4ff32cd-38cf-40ea-8213-45c2b100ac01
+            # eg TCGA-05-4244-01Z-00-DX1, d4ff32cd-38cf-40ea-8213-45c2b100ac01
             container_id, crdc_instance_uuid = filename.split('.')
 
             print(container_id)
