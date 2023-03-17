@@ -62,7 +62,7 @@ def iter_csvs(ann_blob: storage.Blob) -> Generator[BufferedReader, None, None]:
 @click.option(
     "-c",
     "--collections",
-    nargs="+",
+    multiple=True,
     type=click.Choice(COLLECTIONS),
     help="Collections to use, all by default.",
     show_choices=True,
