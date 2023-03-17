@@ -1,7 +1,6 @@
 """Constants associated with the IDC cloud setup."""
 
-# GCP_PROJECT_ID = "idc-etl-processing"
-GCP_PROJECT_ID = "idc-demo"
+GCP_PROJECT_ID = "idc-etl-processing"
 """The project ID to use for data access."""
 
 
