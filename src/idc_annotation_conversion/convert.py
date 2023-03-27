@@ -290,7 +290,7 @@ def convert_annotations(
 
     segmentation = hd.seg.Segmentation(
         source_images=[source_image_metadata],
-        pixel_array=segmentation_tiles.astype(np.float32),
+        pixel_array=segmentation_tiles,
         segmentation_type=hd.seg.SegmentationTypeValues.FRACTIONAL,
         segment_descriptions=[segment_description],
         series_instance_uid=hd.UID(),
