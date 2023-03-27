@@ -11,7 +11,7 @@ from google.cloud import bigquery
 from google.cloud import storage
 import pydicom
 
-from idc_annotation_conversion import cloud_config
+from idc_annotation_conversion import cloud_config, cloud_io
 from idc_annotation_conversion.convert import convert_annotations
 
 
@@ -79,13 +79,27 @@ def iter_csvs(ann_blob: storage.Blob) -> Generator[BufferedReader, None, None]:
     type=click.Path(path_type=Path, file_okay=False),
     help="Output directory",
 )
+@click.option(
+    "-b",
+    "--output-bucket",
+    help="Output bucket",
+    default=cloud_config.DEFAULT_OUTPUT_BUCKET,
+)
+@click.option(
+    "-p",
+    "--output-prefix",
+    help="Prefix for all output blobs",
+)
 def run(
     collections: Optional[List[str]],
     number: Optional[int] = None,
     output_dir: Optional[Path] = None,
+    output_bucket: Optional[str] = None,
+    output_prefix: Optional[str] = None,
 ):
     # Use all collections if none specified
     collections = collections or COLLECTIONS
+    output_prefix = output_prefix or ""
 
     logging.basicConfig(level=logging.INFO)
 
@@ -107,6 +121,10 @@ def run(
     # Loop over requested collections
     for collection in collections:
         prefix = f'cnn-nuclear-segmentations-2019/data-files/{collection}/'
+
+        if output_dir is not None:
+            collection_dir = output_dir / "collection"
+            collection_dir.mkdir(exist_ok=True)
 
         # Loop over annotations in the bucket for this collection
         for ann_blob in islice(ann_bucket.list_blobs(prefix=prefix), number):
@@ -144,11 +162,19 @@ def run(
             # Choose the instance uid as one with most frames (highest res)
             ins_uuid = selection_df.crdc_instance_uuid.iloc[-1]
 
+            # for i, uuid in enumerate(selection_df.crdc_instance_uuid):
+            #     dcm_blob = public_bucket.get_blob(f'{uuid}.dcm')
+            #     dcm_bytes = dcm_blob.download_as_bytes()
+            #     dcm_meta = pydicom.dcmread(
+            #         BytesIO(dcm_bytes),
+            #     )
+            #     dcm_meta.save_as(f"outputs/{container_id}_im_{i}.dcm")
+            # break
+
             # Download the DICOM file and load metadata only
-            dcm_blob = public_bucket.get_blob(f'{ins_uuid}.dcm')
-            dcm_bytes = dcm_blob.download_as_bytes()
-            dcm_meta = pydicom.dcmread(
-                BytesIO(dcm_bytes),
+            dcm_meta = cloud_io.read_dataset_from_blob(
+                bucket=public_bucket,
+                blob_name=f'{ins_uuid}.dcm',
                 stop_before_pixels=True,
             )
 
@@ -156,9 +182,35 @@ def run(
                 annotation_csvs=iter_csvs(ann_blob),
                 source_image_metadata=dcm_meta,
             )
+
+            # Store objects to bucket
+            if output_bucket is not None:
+                output_bucket_obj = storage_client.bucket(output_bucket)
+                blob_root = "" if output_prefix is None else f"{output_prefix}/"
+                ann_blob_name = (
+                    f"{blob_root}{collection}/{container_id}_ann.dcm"
+                )
+                seg_blob_name = (
+                    f"{blob_root}{collection}/{container_id}_seg.dcm"
+                )
+
+                logging.info(f"Uploading annotation to {ann_blob_name}.")
+                cloud_io.write_dataset_to_blob(
+                    ann_dcm,
+                    output_bucket_obj,
+                    ann_blob_name,
+                )
+                logging.info(f"Uploading segmentation to {seg_blob_name}.")
+                cloud_io.write_dataset_to_blob(
+                    seg_dcm,
+                    output_bucket_obj,
+                    seg_blob_name,
+                )
+
+            # Store objects to filesystem
             if output_dir is not None:
-                ann_path = output_dir / f"{container_id}_ann.dcm"
-                seg_path = output_dir / f"{container_id}_seg.dcm"
+                ann_path = collection_dir / f"{container_id}_ann.dcm"
+                seg_path = collection_dir / f"{container_id}_seg.dcm"
 
                 logging.info(f"Writing annotation to {str(ann_path)}.")
                 ann_dcm.save_as(ann_path)

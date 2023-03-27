@@ -1,3 +1,4 @@
+"""Utilities for converting annotations. Keep clear of cloud-specific things."""
 import logging
 from os import PathLike
 from socket import gethostname
