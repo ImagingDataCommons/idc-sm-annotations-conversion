@@ -9,7 +9,7 @@ from typing import List, Generator, Optional
 import click
 from google.cloud import bigquery
 from google.cloud import storage
-import pydicom
+import highdicom as hd
 
 from idc_annotation_conversion import cloud_config, cloud_io
 from idc_annotation_conversion.convert import convert_annotations
@@ -68,34 +68,76 @@ def iter_csvs(ann_blob: storage.Blob) -> Generator[BufferedReader, None, None]:
     show_choices=True,
 )
 @click.option(
-    "-n",
     "--number",
+    "-n",
     type=int,
     help="Number to process per collection. All by default.",
 )
 @click.option(
-    "-o",
     "--output-dir",
+    "-o",
     type=click.Path(path_type=Path, file_okay=False),
     help="Output directory",
 )
 @click.option(
-    "-b",
     "--output-bucket",
+    "-b",
     help="Output bucket",
     default=cloud_config.DEFAULT_OUTPUT_BUCKET,
 )
 @click.option(
-    "-p",
     "--output-prefix",
+    "-p",
     help="Prefix for all output blobs",
+)
+@click.option(
+    "--store-boundary/--store-centroid",
+    "-B/-C",
+    default=True,
+    help=(
+        "Store either the full boundary of each nucleus as a polygon "
+        "(default), or the just the centroid as a single point."
+    ),
+)
+@click.option(
+    "--annotation-coordinate-type",
+    "--a",
+    type=click.Choice(
+        [v.name for v in hd.ann.AnnotationCoordinateTypeValues],
+        case_sensitive=False,
+    ),
+    default="SCOORD",
+    help=(
+        "Coordinate type for points stored in the microscopy annotations. "
+        "SCOORD: 2D, SCOORD3D: 3D."
+    ),
+)
+@click.option(
+    "--with-segmentation/--without-segmentation",
+    "-s/-S",
+    help="Include a segmentation image in the output.",
+    default=True,
+)
+@click.option(
+    "--segmentation-type",
+    "--t",
+    type=click.Choice(
+        [v.name for v in hd.seg.SegmentationTypeValues],
+        case_sensitive=False,
+    ),
+    default="BINARY",
+    help="Segmentation type for the Segmentation Image, if any.",
 )
 def run(
     collections: Optional[List[str]],
-    number: Optional[int] = None,
-    output_dir: Optional[Path] = None,
-    output_bucket: Optional[str] = None,
-    output_prefix: Optional[str] = None,
+    number: Optional[int],
+    output_dir: Optional[Path],
+    output_bucket: Optional[str],
+    output_prefix: Optional[str],
+    store_boundary: bool,
+    annotation_coordinate_type: str,
+    with_segmentation: bool,
+    segmentation_type: str,
 ):
     # Use all collections if none specified
     collections = collections or COLLECTIONS
@@ -181,12 +223,18 @@ def run(
             ann_dcm, seg_dcm = convert_annotations(
                 annotation_csvs=iter_csvs(ann_blob),
                 source_image_metadata=dcm_meta,
+                include_segmentation=with_segmentation,
+                segmentation_type=segmentation_type,
+                annotation_coordinate_type=annotation_coordinate_type,
+                store_boundary=store_boundary,
             )
 
             # Store objects to bucket
             if output_bucket is not None:
                 output_bucket_obj = storage_client.bucket(output_bucket)
-                blob_root = "" if output_prefix is None else f"{output_prefix}/"
+                blob_root = (
+                    "" if output_prefix is None else f"{output_prefix}/"
+                )
                 ann_blob_name = (
                     f"{blob_root}{collection}/{container_id}_ann.dcm"
                 )
@@ -200,12 +248,13 @@ def run(
                     output_bucket_obj,
                     ann_blob_name,
                 )
-                logging.info(f"Uploading segmentation to {seg_blob_name}.")
-                cloud_io.write_dataset_to_blob(
-                    seg_dcm,
-                    output_bucket_obj,
-                    seg_blob_name,
-                )
+                if with_segmentation:
+                    logging.info(f"Uploading segmentation to {seg_blob_name}.")
+                    cloud_io.write_dataset_to_blob(
+                        seg_dcm,
+                        output_bucket_obj,
+                        seg_blob_name,
+                    )
 
             # Store objects to filesystem
             if output_dir is not None:
@@ -215,8 +264,9 @@ def run(
                 logging.info(f"Writing annotation to {str(ann_path)}.")
                 ann_dcm.save_as(ann_path)
 
-                logging.info(f"Writing segmentation to {str(seg_path)}.")
-                seg_dcm.save_as(seg_path)
+                if with_segmentation:
+                    logging.info(f"Writing segmentation to {str(seg_path)}.")
+                    seg_dcm.save_as(seg_path)
 
 
 if __name__ == "__main__":

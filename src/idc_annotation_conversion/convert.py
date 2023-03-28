@@ -2,7 +2,7 @@
 import logging
 from os import PathLike
 from socket import gethostname
-from typing import Iterable, Sequence, Tuple, Union
+from typing import Iterable, Optional, Sequence, Tuple, Union
 
 import highdicom as hd
 import mahotas as mh
@@ -12,7 +12,7 @@ import pandas as pd
 from pydicom import Dataset
 from pydicom.sr.codedict import codes
 from pydicom.sr.coding import Code
-from pydicom.uid import JPEGLSLossless
+from pydicom.uid import JPEGLSLossless, ExplicitVRLittleEndian
 from shapely.geometry.polygon import Polygon
 
 
@@ -105,12 +105,27 @@ def disassemble_total_pixel_matrix(
 def convert_annotations(
     annotation_csvs: Iterable[Union[str, PathLike]],
     source_image_metadata: Dataset,
+    *,
+    include_segmentation: bool = False,
+    store_boundary: bool = True,
+    annotation_coordinate_type: Union[
+        hd.ann.AnnotationCoordinateTypeValues,
+        str
+    ] = hd.ann.AnnotationCoordinateTypeValues.SCOORD,
+    segmentation_type: Union[
+        hd.seg.SegmentationTypeValues,
+        str
+    ] = hd.seg.SegmentationTypeValues.BINARY,
     debug: bool = False,
-):
+) -> Tuple[
+    hd.ann.MicroscopyBulkSimpleAnnotations,
+    Optional[hd.seg.Segmentation]
+]:
     """Convert an annotation into DICOM format.
 
-    Specifically, a bulk microscopy annotation (vector) and segmentation image
-    (raster) are created.
+    Specifically, a Bulk Microscopy Bulk Simple Annotation object (vector
+    graphics) is created and a Segmentation Image (raster) is optionally
+    created.
 
     Parameters
     ----------
@@ -122,19 +137,36 @@ def convert_annotations(
         to DICOM format). Note that this should be the metadata of the image
         at full resolution. This can be the full image dataset, but the
         PixelData attribute is not required.
-    debug: bool
+    include_segmentation: bool, optional
+        Include the segmentation output.
+    store_boundary: bool, optional
+        Store the full nucleus boundary polygon in the Bulk Microscopy Bulk
+        Simple Annotations. If False, just the centroid is stored as a single
+        point.
+    annotation_coordinate_type: Union[hd.ann.AnnotationCoordinateTypeValues, str], optional
+        Store coordinates in the Bulk Microscopy Bulk Simple Annotations in the
+        (3D) frame of reference (SCOORD3D), or the (2D) total pixel matrix
+        (SCOORD, default).
+    segmentation_type: Union[hd.seg.SegmentationTypeValues, str], optional
+        Segmentation type (BINARY or FRACTIONAL) for the Segmentation Image
+        (if any).
+    debug: bool, optional
         Show visualizations using matplotlib for debugging.
 
     Returns
     -------
-    annotation: pydicom.Dataset:
+    annotation: hd.ann.MicroscopyBulkSimpleAnnotations:
         DICOM bulk microscopy annotation encoding the original annotations in
         vector format.
-    segmentation: pydicom.Dataset:
+    segmentation: Optional[hd.seg.Segmentation]:
         DICOM segmentation image encoding the original annotations in raster
-        format.
+        format, if requested. None otherwise.
 
-    """
+    """  # noqa: E501
+    segmentation_type = hd.seg.SegmentationTypeValues[segmentation_type]
+    annotation_coordinate_type = hd.ann.AnnotationCoordinateTypeValues[
+        annotation_coordinate_type
+    ]
 
     image_orientation = source_image_metadata.ImageOrientationSlide
     origin = source_image_metadata.TotalPixelMatrixOriginSequence[0]
@@ -154,22 +186,29 @@ def convert_annotations(
         pixel_spacing=pixel_spacing,
     )
 
-    graphic_type = hd.ann.GraphicTypeValues.POINT
+    graphic_type = (
+        hd.ann.GraphicTypeValues.POLYGON
+        if store_boundary
+        else hd.ann.GraphicTypeValues.POINT
+    )
     graphic_data = []
     measurements = {
         (codes.SCT.Area, codes.UCUM.SquareMicrometer): [],
     }
-    segmentation_mask = np.zeros(
-        (
-            source_image_metadata.TotalPixelMatrixRows,
-            source_image_metadata.TotalPixelMatrixColumns,
-        ),
-        dtype=bool
-    )
-    logging.info(
-        f"Total Pixel Matrix {segmentation_mask.shape} "
-        f"{segmentation_mask.nbytes:.3g} bytes."
-    )
+
+    if include_segmentation:
+        segmentation_mask = np.zeros(
+            (
+                source_image_metadata.TotalPixelMatrixRows,
+                source_image_metadata.TotalPixelMatrixColumns,
+            ),
+            dtype=bool
+        )
+        logging.info(
+            f"Total Pixel Matrix {segmentation_mask.shape} "
+            f"{segmentation_mask.nbytes:.3g} bytes."
+        )
+
     for f in annotation_csvs:
         df = pd.read_csv(f)
         if debug:
@@ -202,8 +241,9 @@ def convert_annotations(
                     coordinates_image.max(axis=0)
                 )
 
-            contour_image = np.stack([r, c]).T.astype(np.int32)
-            mh.polygon.fill_polygon(contour_image, segmentation_mask)
+            if include_segmentation:
+                contour_image = np.stack([r, c]).T.astype(np.int32)
+                mh.polygon.fill_polygon(contour_image, segmentation_mask)
 
             # fig, axes = plt.subplots(1, 2)
             # axes[1].plot(c, r, color='#027ea3')
@@ -216,18 +256,43 @@ def convert_annotations(
             # fig.suptitle(name)
             # fig.savefig(f'/tmp/{name}.pdf')
 
-            coordinates = transformer(coordinates_image)
-            polygon = Polygon(coordinates)
-            x, y = polygon.centroid.xy
-            centroid = np.array([[x[0], y[0], 0.]])
-            graphic_data.append(centroid)
+            coordinates_ref = transformer(coordinates_image)
+            polygon_ref = Polygon(coordinates_ref)
 
-            area = float(polygon.area)
+            if store_boundary:
+                # Store the full polygon in graphic data
+                if (
+                    annotation_coordinate_type ==
+                    hd.ann.AnnotationCoordinateTypeValues.SCOORD3D
+                ):
+                    coords = np.array(polygon_ref.exterior.coords)
+                else:
+                    # 2D total pixel matrix coordinates
+                    coords = np.array(polygon_image.exterior.coords)
+
+                # Remove the final point (polygon should not be closed)
+                coords = coords[:-1, :]
+                graphic_data.append(coords)
+            else:
+                # Store the centroid of the polygon only, as a single point
+                if (
+                    annotation_coordinate_type ==
+                    hd.ann.AnnotationCoordinateTypeValues.SCOORD3D
+                ):
+                    x, y = polygon_ref.centroid.xy
+                    centroid = np.array([[x[0], y[0], 0.]])
+                else:
+                    # 2D total pixel matrix coordinates
+                    x, y = polygon_image.centroid.xy
+                    centroid = np.array([[x[0], y[0]]])
+                graphic_data.append(centroid)
+
+            area = float(polygon_ref.area)
             measurements[(codes.SCT.Area, codes.UCUM.SquareMicrometer)].append(
                 area
             )
 
-        if debug:
+        if debug and include_segmentation:
             segmentation_frame_mask = segmentation_mask[
                 int(min_offsets[0, 0]):int(max_offsets[0, 0]),
                 int(min_offsets[0, 1]):int(max_offsets[0, 1])
@@ -236,13 +301,6 @@ def convert_annotations(
             plt.show()
 
     logging.info(f"Parsed {len(graphic_data)} annotations.")
-    tile_positions = compute_tile_positions(source_image_metadata)
-    segmentation_tiles = disassemble_total_pixel_matrix(
-        total_pixel_matrix=segmentation_mask,
-        tile_positions=tile_positions,
-        rows=source_image_metadata.Rows,
-        columns=source_image_metadata.Columns
-    )
 
     name = 'Pan-Cancer-Nuclei-Seg'
     algorithm_identification = hd.AlgorithmIdentificationSequence(
@@ -276,7 +334,7 @@ def convert_annotations(
     )
     annotations = hd.ann.MicroscopyBulkSimpleAnnotations(
         source_images=[source_image_metadata],
-        annotation_coordinate_type=hd.ann.AnnotationCoordinateTypeValues.SCOORD3D,
+        annotation_coordinate_type=annotation_coordinate_type,
         annotation_groups=[group],
         series_instance_uid=hd.UID(),
         series_number=204,
@@ -288,30 +346,47 @@ def convert_annotations(
         device_serial_number=gethostname()
     )
 
-    logging.info("Creating segmentation.")
-    segment_description = hd.seg.SegmentDescription(
-        segment_number=1,
-        segment_label='Nuclei',
-        segmented_property_category=finding_category,
-        segmented_property_type=finding_type,
-        algorithm_type=hd.seg.SegmentAlgorithmTypeValues.AUTOMATIC,
-        algorithm_identification=algorithm_identification
-    )
+    if include_segmentation:
+        logging.info("Creating segmentation.")
+        tile_positions = compute_tile_positions(source_image_metadata)
+        segmentation_tiles = disassemble_total_pixel_matrix(
+            total_pixel_matrix=segmentation_mask,
+            tile_positions=tile_positions,
+            rows=source_image_metadata.Rows,
+            columns=source_image_metadata.Columns
+        )
+        segment_description = hd.seg.SegmentDescription(
+            segment_number=1,
+            segment_label='Nuclei',
+            segmented_property_category=finding_category,
+            segmented_property_type=finding_type,
+            algorithm_type=hd.seg.SegmentAlgorithmTypeValues.AUTOMATIC,
+            algorithm_identification=algorithm_identification
+        )
 
-    segmentation = hd.seg.Segmentation(
-        source_images=[source_image_metadata],
-        pixel_array=segmentation_tiles,
-        segmentation_type=hd.seg.SegmentationTypeValues.FRACTIONAL,
-        segment_descriptions=[segment_description],
-        series_instance_uid=hd.UID(),
-        series_number=20,
-        sop_instance_uid=hd.UID(),
-        instance_number=1,
-        manufacturer='MGH Computational Pathology',
-        manufacturer_model_name="tumor-classification",
-        software_versions='1.0',
-        device_serial_number=gethostname(),
-        transfer_syntax_uid=JPEGLSLossless,
-    )
+        # Compression method depends on what is possible given the chosen
+        # segmentation type
+        transfer_syntax_uid = {
+            hd.seg.SegmentationTypeValues.BINARY: ExplicitVRLittleEndian,
+            hd.seg.SegmentationTypeValues.FRACTIONAL: JPEGLSLossless,
+        }[segmentation_type]
+
+        segmentation = hd.seg.Segmentation(
+            source_images=[source_image_metadata],
+            pixel_array=segmentation_tiles,
+            segmentation_type=segmentation_type,
+            segment_descriptions=[segment_description],
+            series_instance_uid=hd.UID(),
+            series_number=20,
+            sop_instance_uid=hd.UID(),
+            instance_number=1,
+            manufacturer='MGH Computational Pathology',
+            manufacturer_model_name="tumor-classification",
+            software_versions='1.0',
+            device_serial_number=gethostname(),
+            transfer_syntax_uid=transfer_syntax_uid,
+        )
+    else:
+        segmentation = None
 
     return annotations, segmentation
