@@ -18,15 +18,18 @@ from shapely.geometry.polygon import Polygon
 
 def compute_tile_positions(source_image: Dataset) -> np.ndarray:
     """Compute the positions of each frame within the total pixel matrix.
+
     Parameters
     ----------
     source_image : pydicom.Dataset
         Metadata of a tiled image
+
     Returns
     -------
     numpy.ndarray
         (Column, Row) position of each frame in the total pixel matrix in pixel
         unit. The top left frame is located at (1, 1).
+
     """
     if hasattr(source_image, "PerFrameFunctionalGroupsSequence"):
         plane_positions = [
@@ -58,6 +61,7 @@ def disassemble_total_pixel_matrix(
     columns: int,
 ) -> np.ndarray:
     """Disassemble a total pixel matrix into individual tiles.
+
     Parameters
     ----------
     total_pixel_matrix: numpy.ndarray
@@ -68,10 +72,12 @@ def disassemble_total_pixel_matrix(
         Number of rows per tile
     columns: int
         Number of columns per tile
+
     Returns
     -------
     numpy.ndarray
         Stacked image tiles
+
     """
     tiles = []
     if total_pixel_matrix.ndim == 3:
@@ -159,6 +165,10 @@ def convert_annotations(
             source_image_metadata.TotalPixelMatrixColumns,
         ),
         dtype=bool
+    )
+    logging.info(
+        f"Total Pixel Matrix {segmentation_mask.shape} "
+        f"{segmentation_mask.nbytes:.3g} bytes."
     )
     for f in annotation_csvs:
         df = pd.read_csv(f)
