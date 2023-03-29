@@ -101,7 +101,7 @@ def iter_csvs(ann_blob: storage.Blob) -> Generator[BufferedReader, None, None]:
 )
 @click.option(
     "--annotation-coordinate-type",
-    "--a",
+    "-a",
     type=click.Choice(
         [v.name for v in hd.ann.AnnotationCoordinateTypeValues],
         case_sensitive=False,
@@ -120,7 +120,7 @@ def iter_csvs(ann_blob: storage.Blob) -> Generator[BufferedReader, None, None]:
 )
 @click.option(
     "--segmentation-type",
-    "--t",
+    "-t",
     type=click.Choice(
         [v.name for v in hd.seg.SegmentationTypeValues],
         case_sensitive=False,
