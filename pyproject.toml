@@ -25,6 +25,9 @@ flake8 = "^6.0.0"
 mypy = "^1.1.1"
 ipython = "^8.11.0"
 
+[tool.poetry.scripts]
+idc-annotation-conversion = "idc_annotation_conversion.__main__:run"
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
