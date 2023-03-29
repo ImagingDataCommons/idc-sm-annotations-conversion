@@ -77,23 +77,25 @@ def iter_csvs(ann_blob: storage.Blob) -> Generator[BufferedReader, None, None]:
     "--output-dir",
     "-o",
     type=click.Path(path_type=Path, file_okay=False),
-    help="Output directory",
+    help="Output directory, default: no output directory",
 )
 @click.option(
     "--output-bucket",
     "-b",
     help="Output bucket",
     default=cloud_config.DEFAULT_OUTPUT_BUCKET,
+    show_default=True,
 )
 @click.option(
     "--output-prefix",
     "-p",
-    help="Prefix for all output blobs",
+    help="Prefix for all output blobs. Default no prefix.",
 )
 @click.option(
     "--store-boundary/--store-centroid",
     "-B/-C",
     default=True,
+    show_default=True,
     help=(
         "Store either the full boundary of each nucleus as a polygon "
         "(default), or the just the centroid as a single point."
@@ -107,6 +109,7 @@ def iter_csvs(ann_blob: storage.Blob) -> Generator[BufferedReader, None, None]:
         case_sensitive=False,
     ),
     default="SCOORD",
+    show_default=True,
     help=(
         "Coordinate type for points stored in the microscopy annotations. "
         "SCOORD: 2D, SCOORD3D: 3D."
@@ -115,8 +118,9 @@ def iter_csvs(ann_blob: storage.Blob) -> Generator[BufferedReader, None, None]:
 @click.option(
     "--with-segmentation/--without-segmentation",
     "-s/-S",
-    help="Include a segmentation image in the output.",
     default=True,
+    show_default=True,
+    help="Include a segmentation image in the output.",
 )
 @click.option(
     "--segmentation-type",
@@ -126,6 +130,7 @@ def iter_csvs(ann_blob: storage.Blob) -> Generator[BufferedReader, None, None]:
         case_sensitive=False,
     ),
     default="BINARY",
+    show_default=True,
     help="Segmentation type for the Segmentation Image, if any.",
 )
 def run(
@@ -139,6 +144,21 @@ def run(
     with_segmentation: bool,
     segmentation_type: str,
 ):
+    """Convert TCGA cell nuclei annotations to DICOM format.
+
+    Convert CSV-format annotations of cell nuclei to DICOM format. Images and
+    annotations are automatically pulled down from cloud buckets as required.
+
+    By default, all annotations for all collections are processed, which will
+    take a very long time. This can be controlled with options.
+
+    Bulk Microscopy Simple Annotations are always produced, Segmentation Images
+    may optionally be created.
+
+    By default, output is to a cloud bucket. It is also possible to output
+    to a local directory.
+
+    """
     # Use all collections if none specified
     collections = collections or COLLECTIONS
     output_prefix = output_prefix or ""
