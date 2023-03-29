@@ -355,6 +355,9 @@ def convert_annotations(
             rows=source_image_metadata.Rows,
             columns=source_image_metadata.Columns
         )
+
+        del segmentation_mask  # help free up some memory
+
         segment_description = hd.seg.SegmentDescription(
             segment_number=1,
             segment_label='Nuclei',
