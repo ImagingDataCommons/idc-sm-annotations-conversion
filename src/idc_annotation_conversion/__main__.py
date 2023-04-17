@@ -102,6 +102,16 @@ def iter_csvs(ann_blob: storage.Blob) -> Generator[BufferedReader, None, None]:
     ),
 )
 @click.option(
+    "--store-wsi-dicom/--no-store-wsi-dicom",
+    "-d/-D",
+    default=False,
+    show_default=True,
+    help=(
+        "Download all WSI DICOM files and store in the output directory "
+        "(if any)."
+    ),
+)
+@click.option(
     "--annotation-coordinate-type",
     "-a",
     type=click.Choice(
@@ -140,6 +150,7 @@ def run(
     output_bucket: Optional[str],
     output_prefix: Optional[str],
     store_boundary: bool,
+    store_wsi_dicom: bool,
     annotation_coordinate_type: str,
     with_segmentation: bool,
     segmentation_type: str,
@@ -185,7 +196,7 @@ def run(
         prefix = f'cnn-nuclear-segmentations-2019/data-files/{collection}/'
 
         if output_dir is not None:
-            collection_dir = output_dir / "collection"
+            collection_dir = output_dir / collection
             collection_dir.mkdir(exist_ok=True)
 
         # Loop over annotations in the bucket for this collection
@@ -224,21 +235,24 @@ def run(
             # Choose the instance uid as one with most frames (highest res)
             ins_uuid = selection_df.crdc_instance_uuid.iloc[-1]
 
-            # for i, uuid in enumerate(selection_df.crdc_instance_uuid):
-            #     dcm_blob = public_bucket.get_blob(f'{uuid}.dcm')
-            #     dcm_bytes = dcm_blob.download_as_bytes()
-            #     dcm_meta = pydicom.dcmread(
-            #         BytesIO(dcm_bytes),
-            #     )
-            #     dcm_meta.save_as(f"outputs/{container_id}_im_{i}.dcm")
-            # break
+            if store_wsi_dicom:
+                for i, uuid in enumerate(selection_df.crdc_instance_uuid):
+                    wsi_dcm = cloud_io.read_dataset_from_blob(
+                        bucket=public_bucket,
+                        blob_name=f"{uuid}.dcm",
+                    )
+                    wsi_path = collection_dir / f"{container_id}_im_{i}.dcm"
+                    wsi_dcm.save_as(wsi_path)
 
-            # Download the DICOM file and load metadata only
-            dcm_meta = cloud_io.read_dataset_from_blob(
-                bucket=public_bucket,
-                blob_name=f'{ins_uuid}.dcm',
-                stop_before_pixels=True,
-            )
+                # Store the last (highest res) for later
+                dcm_meta = wsi_dcm
+            else:
+                # Download the DICOM file and load metadata only
+                dcm_meta = cloud_io.read_dataset_from_blob(
+                    bucket=public_bucket,
+                    blob_name=f'{ins_uuid}.dcm',
+                    stop_before_pixels=True,
+                )
 
             ann_dcm, seg_dcm = convert_annotations(
                 annotation_csvs=iter_csvs(ann_blob),
