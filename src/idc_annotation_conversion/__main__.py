@@ -81,8 +81,8 @@ def get_dicom_web_client(
         Client ID to use when requesting OAuth token. Required if OAuth
         authentication is to be used.
     client_secret: Optional[str]
-        Client secret to use when requesting OAuth token. If OAuth is to be
-        used and this is not provided, the user will be prompted for the value.
+        Client secret to use when requesting OAuth token. Required if OAuth
+        authentication is to be used.
 
     Returns
     -------
@@ -93,9 +93,6 @@ def get_dicom_web_client(
     if token_url is None:
         # Simple, no authentication
         return DICOMwebClient(url)
-
-    if client_secret is None:
-        client_secret = getpass("Enter client secret for DICOM archive: ")
 
     oauth_client = BackendApplicationClient(client_id=client_id)
     oauth = OAuth2Session(client=oauth_client)
@@ -278,6 +275,11 @@ def run(
 
     # Setup DICOM archive for outputs
     if dicom_archive is not None:
+        if archive_token_url is not None and archive_client_secret is None:
+            archive_client_secret = getpass(
+                "Enter client secret for DICOM archive: "
+            )
+
         web_client = get_dicom_web_client(
             url=dicom_archive,
             token_url=archive_token_url,
@@ -355,6 +357,12 @@ def run(
 
                     # Store to DICOM archive
                     if dicom_archive is not None:
+                        web_client = get_dicom_web_client(
+                            url=dicom_archive,
+                            token_url=archive_token_url,
+                            client_id=archive_client_id,
+                            client_secret=archive_client_secret,
+                        )
                         web_client.store_instances([wsi_dcm])
 
                 # Keep the last (highest res) for later
@@ -417,6 +425,14 @@ def run(
 
             # Store objects to DICOM archive
             if dicom_archive is not None:
+                # Recreate client each time to deal with token expiration
+                web_client = get_dicom_web_client(
+                    url=dicom_archive,
+                    token_url=archive_token_url,
+                    client_id=archive_client_id,
+                    client_secret=archive_client_secret,
+                )
+
                 logging.info(f"Writing annotation to {dicom_archive}.")
                 web_client.store_instances([ann_dcm])
 
