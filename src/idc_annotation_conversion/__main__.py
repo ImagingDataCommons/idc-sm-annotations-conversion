@@ -1,5 +1,6 @@
 from io import BytesIO, BufferedReader
 from itertools import islice
+from getpass import getpass
 import logging
 from pathlib import Path
 import os
@@ -7,9 +8,12 @@ import tarfile
 from typing import List, Generator, Optional
 
 import click
+from dicomweb_client import DICOMwebClient
 from google.cloud import bigquery
 from google.cloud import storage
 import highdicom as hd
+from oauthlib.oauth2 import BackendApplicationClient
+from requests_oauthlib import OAuth2Session
 
 from idc_annotation_conversion import cloud_config, cloud_io
 from idc_annotation_conversion.convert import convert_annotations
@@ -58,6 +62,52 @@ def iter_csvs(ann_blob: storage.Blob) -> Generator[BufferedReader, None, None]:
                 yield tar.extractfile(member)
 
 
+def get_dicom_web_client(
+    url: str,
+    token_url: Optional[str] = None,
+    client_id: Optional[str] = None,
+    client_secret: Optional[str] = None,
+) -> DICOMwebClient:
+    """Create a DICOM Web Client.
+
+    Parameters
+    ----------
+    url: str
+        URL of the archive.
+    token_url: Optional[Str], optional
+        URL from which to request if using OAuth. If not provided, no
+        authentication will be used.
+    client_id: Optional[str]
+        Client ID to use when requesting OAuth token. Required if OAuth
+        authentication is to be used.
+    client_secret: Optional[str]
+        Client secret to use when requesting OAuth token. If OAuth is to be
+        used and this is not provided, the user will be prompted for the value.
+
+    Returns
+    -------
+    DICOMwebClient
+        Client created using the provided parameters.
+
+    """
+    if token_url is None:
+        # Simple, no authentication
+        return DICOMwebClient(url)
+
+    if client_secret is None:
+        client_secret = getpass("Enter client secret for DICOM archive: ")
+
+    oauth_client = BackendApplicationClient(client_id=client_id)
+    oauth = OAuth2Session(client=oauth_client)
+    oauth.fetch_token(
+        token_url=token_url,
+        client_id=client_id,
+        client_secret=client_secret,
+    )
+
+    return DICOMwebClient(url, session=oauth)
+
+
 @click.command()
 @click.option(
     "-c",
@@ -84,6 +134,13 @@ def iter_csvs(ann_blob: storage.Blob) -> Generator[BufferedReader, None, None]:
     "-b",
     help="Output bucket",
     default=cloud_config.DEFAULT_OUTPUT_BUCKET,
+    show_default=True,
+)
+@click.option(
+    "--store-bucket/--no-store-bucket",
+    "-k/-K",
+    help="Whether to store outputs to the bucket in this run.",
+    default=True,
     show_default=True,
 )
 @click.option(
@@ -143,17 +200,45 @@ def iter_csvs(ann_blob: storage.Blob) -> Generator[BufferedReader, None, None]:
     show_default=True,
     help="Segmentation type for the Segmentation Image, if any.",
 )
+@click.option(
+    "--dicom-archive",
+    "-x",
+    help="Additionally store outputs to this DICOM archive.",
+)
+@click.option(
+    "--archive-token-url",
+    "-u",
+    help="URL to use to request an OAuth token to access the archive.",
+)
+@click.option(
+    "--archive-client-id",
+    "-i",
+    help="Client ID to use for OAuth token request.",
+)
+@click.option(
+    "--archive-client-secret",
+    "-y",
+    help=(
+        "Client secret to use for OAuth token request. If none, user will "
+        "be prompted for secret."
+    )
+)
 def run(
     collections: Optional[List[str]],
     number: Optional[int],
     output_dir: Optional[Path],
-    output_bucket: Optional[str],
+    output_bucket: str,
     output_prefix: Optional[str],
+    store_bucket: bool,
     store_boundary: bool,
     store_wsi_dicom: bool,
     annotation_coordinate_type: str,
     with_segmentation: bool,
     segmentation_type: str,
+    dicom_archive: Optional[str] = None,
+    archive_token_url: Optional[str] = None,
+    archive_client_id: Optional[str] = None,
+    archive_client_secret: Optional[str] = None,
 ):
     """Convert TCGA cell nuclei annotations to DICOM format.
 
@@ -190,6 +275,22 @@ def run(
     # Create output directory
     if output_dir is not None:
         output_dir.mkdir(exist_ok=True)
+
+    # Setup DICOM archive for outputs
+    if dicom_archive is not None:
+        web_client = get_dicom_web_client(
+            url=dicom_archive,
+            token_url=archive_token_url,
+            client_id=archive_client_id,
+            client_secret=archive_client_secret,
+        )
+
+        try:
+            web_client.search_for_studies(limit=1)
+        except Exception as e:
+            raise RuntimeError(
+                "Unsuccessful connecting to requested DICOM archive."
+            ) from e
 
     # Loop over requested collections
     for collection in collections:
@@ -235,16 +336,28 @@ def run(
             # Choose the instance uid as one with most frames (highest res)
             ins_uuid = selection_df.crdc_instance_uuid.iloc[-1]
 
-            if store_wsi_dicom:
+            if (
+                store_wsi_dicom and
+                (output_dir is not None or dicom_archive is not None)
+            ):
                 for i, uuid in enumerate(selection_df.crdc_instance_uuid):
                     wsi_dcm = cloud_io.read_dataset_from_blob(
                         bucket=public_bucket,
                         blob_name=f"{uuid}.dcm",
                     )
-                    wsi_path = collection_dir / f"{container_id}_im_{i}.dcm"
-                    wsi_dcm.save_as(wsi_path)
 
-                # Store the last (highest res) for later
+                    # Store to disk
+                    if output_dir is not None:
+                        wsi_path = (
+                            collection_dir / f"{container_id}_im_{i}.dcm"
+                        )
+                        wsi_dcm.save_as(wsi_path)
+
+                    # Store to DICOM archive
+                    if dicom_archive is not None:
+                        web_client.store_instances([wsi_dcm])
+
+                # Keep the last (highest res) for later
                 dcm_meta = wsi_dcm
             else:
                 # Download the DICOM file and load metadata only
@@ -264,7 +377,7 @@ def run(
             )
 
             # Store objects to bucket
-            if output_bucket is not None:
+            if store_bucket:
                 output_bucket_obj = storage_client.bucket(output_bucket)
                 blob_root = (
                     "" if output_prefix is None else f"{output_prefix}/"
@@ -301,6 +414,15 @@ def run(
                 if with_segmentation:
                     logging.info(f"Writing segmentation to {str(seg_path)}.")
                     seg_dcm.save_as(seg_path)
+
+            # Store objects to DICOM archive
+            if dicom_archive is not None:
+                logging.info(f"Writing annotation to {dicom_archive}.")
+                web_client.store_instances([ann_dcm])
+
+                if with_segmentation:
+                    logging.info(f"Writing segmentation to {dicom_archive}.")
+                    web_client.store_instances([seg_dcm])
 
 
 if __name__ == "__main__":
