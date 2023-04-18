@@ -388,6 +388,7 @@ def convert_annotations(
             software_versions='1.0',
             device_serial_number=gethostname(),
             transfer_syntax_uid=transfer_syntax_uid,
+            max_fractional_value=1,
         )
     else:
         segmentation = None
