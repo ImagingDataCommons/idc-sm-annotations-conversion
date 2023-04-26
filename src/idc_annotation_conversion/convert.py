@@ -1,6 +1,8 @@
-"""Utilities for converting annotations. Keep clear of cloud-specific things."""
+"""Utilities for converting annotations. Clear of cloud-specific things."""
 import logging
 from os import PathLike
+from io import BufferedReader
+import multiprocessing as mp
 from socket import gethostname
 from typing import Iterable, Optional, Sequence, Tuple, Union
 
@@ -8,7 +10,6 @@ import highdicom as hd
 import mahotas as mh
 import numpy as np
 import pandas as pd
-# from matplotlib import pyplot as plt
 from pydicom import Dataset
 from pydicom.sr.codedict import codes
 from pydicom.sr.coding import Code
@@ -102,6 +103,113 @@ def disassemble_total_pixel_matrix(
     return np.stack(tiles)
 
 
+def process_csv_row(
+    csv_row: pd.Series,
+    transformer: hd.spatial.ImageToReferenceTransformer,
+    store_boundary: bool = True,
+    annotation_coordinate_type: hd.ann.AnnotationCoordinateTypeValues = hd.ann.AnnotationCoordinateTypeValues.SCOORD,  # noqa: E501
+) -> Tuple[np.ndarray, np.ndarray, float]:
+    """Process a single annotation CSV file.
+
+    Parameters
+    ----------
+    csv_row: pd.Series
+        Single row of a loaded annotation CSV.
+    transformer: hd.spatial.ImageToReferenceTransformer
+        Transformer object to map image coordinates to reference coordinates
+        for the image.
+    store_boundary: bool, optional
+        Store the full nucleus boundary polygon in the Bulk Microscopy Bulk
+        Simple Annotations. If False, just the centroid is stored as a single
+        point.
+    annotation_coordinate_type: Union[hd.ann.AnnotationCoordinateTypeValues, str], optional
+        Store coordinates in the Bulk Microscopy Bulk Simple Annotations in the
+        (3D) frame of reference (SCOORD3D), or the (2D) total pixel matrix
+        (SCOORD, default).
+
+    Returns
+    -------
+    segmentation_coordinates: np.ndarray
+        Numpy array of boundary coordinates in the form used by
+        mahotas.polygon.fill_polygon to create the segmentation mask.
+    graphic_data: np.ndarray
+        Numpy array of coordinates to include in the Bulk Microscopy Simple
+        Annotations.
+    area: float
+        Area measurement of this polygon.
+
+    """  # noqa: E501
+    points = np.array(
+        csv_row.Polygon[1:-1].split(':'),
+        dtype=np.float32
+    )
+    n = len(points) // 2
+    coordinates_image = points.reshape(n, 2)
+    if coordinates_image.shape[0] < 3:
+        return None, None, None
+    polygon_image = Polygon(coordinates_image)
+    c, r = polygon_image.exterior.xy
+
+    contour_image = np.stack([r, c]).T.astype(np.int32)
+
+    coordinates_ref = transformer(coordinates_image)
+    polygon_ref = Polygon(coordinates_ref)
+
+    if store_boundary:
+        # Store the full polygon in graphic data
+        if (
+            annotation_coordinate_type ==
+            hd.ann.AnnotationCoordinateTypeValues.SCOORD3D
+        ):
+            coords = np.array(polygon_ref.exterior.coords)
+        else:
+            # 2D total pixel matrix coordinates
+            coords = np.array(polygon_image.exterior.coords)
+
+        # Remove the final point (polygon should not be closed)
+        coords = coords[:-1, :]
+        graphic_data = coords
+    else:
+        # Store the centroid of the polygon only, as a single point
+        if (
+            annotation_coordinate_type ==
+            hd.ann.AnnotationCoordinateTypeValues.SCOORD3D
+        ):
+            x, y = polygon_ref.centroid.xy
+            centroid = np.array([[x[0], y[0], 0.]])
+        else:
+            # 2D total pixel matrix coordinates
+            x, y = polygon_image.centroid.xy
+            centroid = np.array([[x[0], y[0]]])
+        graphic_data = centroid
+
+    area = float(polygon_ref.area)
+
+    return contour_image, graphic_data, area
+
+
+def pool_init(
+    transformer: hd.spatial.ImageToReferenceTransformer,
+    store_boundary: bool = True,
+    annotation_coordinate_type: hd.ann.AnnotationCoordinateTypeValues = hd.ann.AnnotationCoordinateTypeValues.SCOORD,  # noqa: E501
+):
+    global transformer_global
+    transformer_global = transformer
+    global store_boundary_global
+    store_boundary_global = store_boundary
+    global annotation_coordinate_type_global
+    annotation_coordinate_type_global = annotation_coordinate_type
+
+
+def pool_fun(csv_row: pd.Series):
+    return process_csv_row(
+        csv_row,
+        transformer_global,
+        store_boundary_global,
+        annotation_coordinate_type_global,
+    )
+
+
 def convert_annotations(
     annotation_csvs: Iterable[Union[str, PathLike]],
     source_image_metadata: Dataset,
@@ -116,14 +224,14 @@ def convert_annotations(
         hd.seg.SegmentationTypeValues,
         str
     ] = hd.seg.SegmentationTypeValues.BINARY,
-    debug: bool = False,
+    workers: int = 0,
 ) -> Tuple[
     hd.ann.MicroscopyBulkSimpleAnnotations,
     Optional[hd.seg.Segmentation]
 ]:
     """Convert an annotation into DICOM format.
 
-    Specifically, a Bulk Microscopy Bulk Simple Annotation object (vector
+    Specifically, a Bulk Microscopy Simple Annotation object (vector
     graphics) is created and a Segmentation Image (raster) is optionally
     created.
 
@@ -150,8 +258,9 @@ def convert_annotations(
     segmentation_type: Union[hd.seg.SegmentationTypeValues, str], optional
         Segmentation type (BINARY or FRACTIONAL) for the Segmentation Image
         (if any).
-    debug: bool, optional
-        Show visualizations using matplotlib for debugging.
+    workers: int
+        Number of subprocess workers to spawn. If 0, all computation will use
+        the main thread.
 
     Returns
     -------
@@ -209,96 +318,68 @@ def convert_annotations(
             f"{segmentation_mask.nbytes:.3g} bytes."
         )
 
-    for f in annotation_csvs:
-        df = pd.read_csv(f)
-        if debug:
-            fig, axes = plt.subplots(1, 2)
-            min_offsets = np.zeros((1, 2), dtype=np.float32)
-            min_offsets[0, 0] = source_image_metadata.TotalPixelMatrixRows
-            min_offsets[0, 1] = source_image_metadata.TotalPixelMatrixColumns
-            max_offsets = np.zeros((1, 2), dtype=np.float32)
+    if workers > 0:
+        # Use multiprcocessing
+        # Read in all CSVs using threads
+        logging.info("Reading CSV files.")
+        all_dfs = [pd.read_csv(f) for f in annotation_csvs]
 
-        for i, (index, values) in enumerate(df.iterrows()):
-            points = np.array(
-                values.Polygon[1:-1].split(':'),
-                dtype=np.float32
+        # Join CSVs and process each row in parallel
+        df = pd.concat(all_dfs, ignore_index=True)
+        logging.info(f"Found {len(df)} annotations.")
+
+        input_data = [row for _, row in df.iterrows()]
+
+        with mp.Pool(
+            workers,
+            initializer=pool_init,
+            initargs=(transformer, store_boundary, annotation_coordinate_type)
+        ) as pool:
+            results = pool.map(
+                pool_fun,
+                input_data,
             )
-            n = len(points) // 2
-            coordinates_image = points.reshape(n, 2)
-            if coordinates_image.shape[0] < 3:
+
+        for contour_image, graphic_item, area in results:
+            if contour_image is None:
+                # Failures due to too few points
                 continue
-            polygon_image = Polygon(coordinates_image)
-            c, r = polygon_image.exterior.xy
 
-            if debug:
-                axes[1].plot(c, r, color='#027ea3')
-                min_offsets = np.minimum(
-                    min_offsets,
-                    coordinates_image.min(axis=0)
-                )
-                max_offsets = np.maximum(
-                    max_offsets,
-                    coordinates_image.max(axis=0)
-                )
+            measurements[
+                (codes.SCT.Area, codes.UCUM.SquareMicrometer)
+            ].append(area)
+            graphic_data.append(graphic_item)
 
+            # Can't multithread this bit because each contour is written to the
+            # same array
             if include_segmentation:
-                contour_image = np.stack([r, c]).T.astype(np.int32)
                 mh.polygon.fill_polygon(contour_image, segmentation_mask)
 
-            # fig, axes = plt.subplots(1, 2)
-            # axes[1].plot(c, r, color='#027ea3')
-            # axes[1].invert_yaxis()
-            # contour_obj = contour_image - contour_image.min(axis=0)
-            # segmentation_obj_mask = np.zeros(contour_obj.max(axis=0), np.bool)
-            # mh.polygon.fill_polygon(contour_obj, segmentation_obj_mask)
-            # axes[0].imshow(segmentation_obj_mask)
-            # name = f'{f.stem} - {i}'
-            # fig.suptitle(name)
-            # fig.savefig(f'/tmp/{name}.pdf')
+    else:
+        # Use the main thread
 
-            coordinates_ref = transformer(coordinates_image)
-            polygon_ref = Polygon(coordinates_ref)
+        for f in annotation_csvs:
+            df = pd.read_csv(f)
 
-            if store_boundary:
-                # Store the full polygon in graphic data
-                if (
-                    annotation_coordinate_type ==
-                    hd.ann.AnnotationCoordinateTypeValues.SCOORD3D
-                ):
-                    coords = np.array(polygon_ref.exterior.coords)
-                else:
-                    # 2D total pixel matrix coordinates
-                    coords = np.array(polygon_image.exterior.coords)
+            for _, csv_row in df.iterrows():
+                contour_image, graphic_item, area = process_csv_row(
+                    csv_row,
+                    transformer,
+                    store_boundary,
+                    annotation_coordinate_type,
+                )
 
-                # Remove the final point (polygon should not be closed)
-                coords = coords[:-1, :]
-                graphic_data.append(coords)
-            else:
-                # Store the centroid of the polygon only, as a single point
-                if (
-                    annotation_coordinate_type ==
-                    hd.ann.AnnotationCoordinateTypeValues.SCOORD3D
-                ):
-                    x, y = polygon_ref.centroid.xy
-                    centroid = np.array([[x[0], y[0], 0.]])
-                else:
-                    # 2D total pixel matrix coordinates
-                    x, y = polygon_image.centroid.xy
-                    centroid = np.array([[x[0], y[0]]])
-                graphic_data.append(centroid)
+                if contour_image is None:
+                    continue
 
-            area = float(polygon_ref.area)
-            measurements[(codes.SCT.Area, codes.UCUM.SquareMicrometer)].append(
-                area
-            )
+                graphic_data.append(graphic_item)
 
-        if debug and include_segmentation:
-            segmentation_frame_mask = segmentation_mask[
-                int(min_offsets[0, 0]):int(max_offsets[0, 0]),
-                int(min_offsets[0, 1]):int(max_offsets[0, 1])
-            ]
-            axes[0].imshow(segmentation_frame_mask)
-            plt.show()
+                measurements[
+                    (codes.SCT.Area, codes.UCUM.SquareMicrometer)
+                ].append(area)
+
+                if include_segmentation:
+                    mh.polygon.fill_polygon(contour_image, segmentation_mask)
 
     logging.info(f"Parsed {len(graphic_data)} annotations.")
 

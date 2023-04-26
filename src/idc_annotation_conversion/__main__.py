@@ -220,6 +220,13 @@ def get_dicom_web_client(
         "be prompted for secret."
     )
 )
+@click.option(
+    "--workers",
+    "-w",
+    type=int,
+    default=0,
+    help="Number of subprocesses to use. If 0, the main thread is used."
+)
 def run(
     collections: Optional[List[str]],
     number: Optional[int],
@@ -236,6 +243,7 @@ def run(
     archive_token_url: Optional[str] = None,
     archive_client_id: Optional[str] = None,
     archive_client_secret: Optional[str] = None,
+    workers: int = 0,
 ):
     """Convert TCGA cell nuclei annotations to DICOM format.
 
@@ -382,6 +390,7 @@ def run(
                 segmentation_type=segmentation_type,
                 annotation_coordinate_type=annotation_coordinate_type,
                 store_boundary=store_boundary,
+                workers=workers,
             )
 
             # Store objects to bucket
