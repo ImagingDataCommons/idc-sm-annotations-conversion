@@ -1,15 +1,17 @@
 """Utilities for converting annotations. Clear of cloud-specific things."""
 import logging
 from os import PathLike
-from io import BufferedReader
 import multiprocessing as mp
 from socket import gethostname
-from typing import Iterable, Optional, Sequence, Tuple, Union
+from tempfile import TemporaryDirectory
+from typing import Iterable, Optional, Tuple, Union
 
+import dicomslide
 import highdicom as hd
 import mahotas as mh
 import numpy as np
 import pandas as pd
+from dicomweb_client import DICOMfileClient
 from pydicom import Dataset
 from pydicom.sr.codedict import codes
 from pydicom.sr.coding import Code
@@ -17,62 +19,18 @@ from pydicom.uid import JPEGLSLossless, ExplicitVRLittleEndian
 from shapely.geometry.polygon import Polygon
 
 
-def compute_tile_positions(source_image: Dataset) -> np.ndarray:
-    """Compute the positions of each frame within the total pixel matrix.
-
-    Parameters
-    ----------
-    source_image : pydicom.Dataset
-        Metadata of a tiled image
-
-    Returns
-    -------
-    numpy.ndarray
-        (Column, Row) position of each frame in the total pixel matrix in pixel
-        unit. The top left frame is located at (1, 1).
-
-    """
-    if hasattr(source_image, "PerFrameFunctionalGroupsSequence"):
-        plane_positions = [
-            hd.PlanePositionSequence.from_sequence(
-                frame_item.PlanePositionSlideSequence
-            )
-            for frame_item in source_image.PerFrameFunctionalGroupsSequence
-        ]
-    else:
-        plane_positions = hd.utils.compute_plane_position_slide_per_frame(
-            source_image
-        )
-    return np.array(
-        [
-            (
-                int(seq[0].ColumnPositionInTotalImagePixelMatrix),
-                int(seq[0].RowPositionInTotalImagePixelMatrix),
-            )
-            for seq in plane_positions
-        ],
-        dtype=int,
-    )
-
-
 def disassemble_total_pixel_matrix(
-    total_pixel_matrix: np.ndarray,
-    tile_positions: Sequence[Tuple[int, int]],
-    rows: int,
-    columns: int,
+    seg_total_pixel_matrix: np.ndarray,
+    source_image_metadata: Dataset,
 ) -> np.ndarray:
     """Disassemble a total pixel matrix into individual tiles.
 
     Parameters
     ----------
-    total_pixel_matrix: numpy.ndarray
-        Total pixel matrix
-    tile_positions: Sequence[Tuple[int, int]]
-        Column, Row position of each tile relative to the slide
-    rows: int
-        Number of rows per tile
-    columns: int
-        Number of columns per tile
+    seg_total_pixel_matrix: numpy.ndarray
+        Total pixel matrix of the segmentation as a 2D NumPy array.
+    source_metadata: pydicom.Dataset
+        DICOM metadata of the source image.
 
     Returns
     -------
@@ -80,27 +38,25 @@ def disassemble_total_pixel_matrix(
         Stacked image tiles
 
     """
-    tiles = []
-    if total_pixel_matrix.ndim == 3:
-        tile_shape = (rows, columns, total_pixel_matrix.shape[-1])
-    elif total_pixel_matrix.ndim == 2:
-        tile_shape = (rows, columns)
-    else:
+    if seg_total_pixel_matrix.ndim != 2:
         raise ValueError(
             "Total pixel matrix has unexpected number of dimensions."
         )
-    for row_offset, column_offset in tile_positions:
-        tile = np.zeros(tile_shape, dtype=total_pixel_matrix.dtype)
-        pixel_array = total_pixel_matrix[
-            row_offset: (row_offset + rows),
-            column_offset: (column_offset + columns),
-            ...,
-        ]
-        tile[
-            0:pixel_array.shape[0], 0:pixel_array.shape[1], ...
-        ] = pixel_array
-        tiles.append(tile)
-    return np.stack(tiles)
+
+    # Need a client object to work with DICOM slide so just create a dummy one
+    with TemporaryDirectory() as tmpdir:
+        client = DICOMfileClient(f"file://{tmpdir}")
+
+        im_tpm = dicomslide.TotalPixelMatrix(client, source_image_metadata)
+
+        tile_rows, tile_cols, _ = im_tpm.tile_shape
+
+        return dicomslide.disassemble_total_pixel_matrix(
+            seg_total_pixel_matrix,
+            im_tpm.tile_positions,
+            tile_rows,
+            tile_cols,
+        )
 
 
 def process_csv_row(
@@ -429,12 +385,9 @@ def convert_annotations(
 
     if include_segmentation:
         logging.info("Creating segmentation.")
-        tile_positions = compute_tile_positions(source_image_metadata)
         segmentation_tiles = disassemble_total_pixel_matrix(
-            total_pixel_matrix=segmentation_mask,
-            tile_positions=tile_positions,
-            rows=source_image_metadata.Rows,
-            columns=source_image_metadata.Columns
+            seg_total_pixel_matrix=segmentation_mask,
+            source_image_metadata=source_image_metadata,
         )
 
         del segmentation_mask  # help free up some memory
