@@ -317,7 +317,7 @@ def convert_annotations(
     group = hd.ann.AnnotationGroup(
         number=1,
         uid=hd.UID(),
-        label=metadata_config.annotation_label,
+        label=metadata_config.label,
         annotated_property_category=metadata_config.finding_category,
         annotated_property_type=metadata_config.finding_type,
         graphic_type=graphic_type,
