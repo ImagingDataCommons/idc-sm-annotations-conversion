@@ -3,18 +3,21 @@ import logging
 from os import PathLike
 import multiprocessing as mp
 from tempfile import TemporaryDirectory
+from time import time
 from typing import Iterable, Optional, Tuple, Union
 
 import dicomslide
 import highdicom as hd
-import mahotas as mh
 import numpy as np
 import pandas as pd
 from dicomweb_client import DICOMfileClient
 from pydicom import Dataset
 from pydicom.sr.codedict import codes
 from pydicom.uid import JPEGLSLossless, ExplicitVRLittleEndian
+from rasterio.features import rasterize
 from shapely.geometry.polygon import Polygon
+
+
 from idc_annotation_conversion import metadata_config
 
 
@@ -63,7 +66,7 @@ def process_csv_row(
     transformer: hd.spatial.ImageToReferenceTransformer,
     store_boundary: bool = True,
     annotation_coordinate_type: hd.ann.AnnotationCoordinateTypeValues = hd.ann.AnnotationCoordinateTypeValues.SCOORD,  # noqa: E501
-) -> Tuple[np.ndarray, np.ndarray, float]:
+) -> Tuple[Polygon, np.ndarray, float]:
     """Process a single annotation CSV file.
 
     Parameters
@@ -84,9 +87,8 @@ def process_csv_row(
 
     Returns
     -------
-    segmentation_coordinates: np.ndarray
-        Numpy array of boundary coordinates in the form used by
-        mahotas.polygon.fill_polygon to create the segmentation mask.
+    polygon_image: shapely.Polygon
+        Polygon (in image coordinates) representing the annotation in the CSV.
     graphic_data: np.ndarray
         Numpy array of coordinates to include in the Bulk Microscopy Simple
         Annotations.
@@ -103,9 +105,6 @@ def process_csv_row(
     if coordinates_image.shape[0] < 3:
         return None, None, None
     polygon_image = Polygon(coordinates_image)
-    c, r = polygon_image.exterior.xy
-
-    contour_image = np.stack([r, c]).T.astype(np.int32)
 
     coordinates_ref = transformer(coordinates_image)
     polygon_ref = Polygon(coordinates_ref)
@@ -140,7 +139,7 @@ def process_csv_row(
 
     area = float(polygon_ref.area)
 
-    return contour_image, graphic_data, area
+    return polygon_image, graphic_data, area
 
 
 def pool_init(
@@ -255,23 +254,6 @@ def convert_annotations(
         if store_boundary
         else hd.ann.GraphicTypeValues.POINT
     )
-    graphic_data = []
-    measurements = {
-        (codes.SCT.Area, codes.UCUM.SquareMicrometer): [],
-    }
-
-    if include_segmentation:
-        segmentation_mask = np.zeros(
-            (
-                source_image_metadata.TotalPixelMatrixRows,
-                source_image_metadata.TotalPixelMatrixColumns,
-            ),
-            dtype=bool
-        )
-        logging.info(
-            f"Total Pixel Matrix {segmentation_mask.shape} "
-            f"{segmentation_mask.nbytes:.3g} bytes."
-        )
 
     if workers > 0:
         # Use multiprcocessing
@@ -295,24 +277,20 @@ def convert_annotations(
                 input_data,
             )
 
-        for contour_image, graphic_item, area in results:
-            if contour_image is None:
-                # Failures due to too few points
-                continue
+        results = [r for r in results if r[0] is not None]  # remove failures
 
-            measurements[
-                (codes.SCT.Area, codes.UCUM.SquareMicrometer)
-            ].append(area)
-            graphic_data.append(graphic_item)
+        polygons, graphic_data, areas = zip(*results)
 
-            # Can't multithread this bit because each contour is written to the
-            # same array
-            if include_segmentation:
-                mh.polygon.fill_polygon(contour_image, segmentation_mask)
+        measurements = {
+            (codes.SCT.Area, codes.UCUM.SquareMicrometer): areas
+         }
 
     else:
         # Use the main thread
-
+        graphic_data = []
+        measurements = {
+            (codes.SCT.Area, codes.UCUM.SquareMicrometer): [],
+        }
         for f in annotation_csvs:
             df = pd.read_csv(f)
 
@@ -332,9 +310,6 @@ def convert_annotations(
                 measurements[
                     (codes.SCT.Area, codes.UCUM.SquareMicrometer)
                 ].append(area)
-
-                if include_segmentation:
-                    mh.polygon.fill_polygon(contour_image, segmentation_mask)
 
     logging.info(f"Parsed {len(graphic_data)} annotations.")
 
@@ -373,7 +348,17 @@ def convert_annotations(
     )
 
     if include_segmentation:
-        logging.info("Creating segmentation.")
+        logging.info("Rasterizing segmentation.")
+        mask_shape = (
+            source_image_metadata.TotalPixelMatrixRows,
+            source_image_metadata.TotalPixelMatrixColumns,
+        )
+        raster_start_time = time()
+        segmentation_mask = rasterize(polygons, mask_shape, dtype=bool)
+        raster_time = time() - raster_start_time
+        logging.info(f"Completed rasterization in {raster_time:.1f}s.")
+
+        logging.info("Creating DICOM segmentation image.")
         segmentation_tiles = disassemble_total_pixel_matrix(
             seg_total_pixel_matrix=segmentation_mask,
             source_image_metadata=source_image_metadata,
@@ -397,6 +382,7 @@ def convert_annotations(
             hd.seg.SegmentationTypeValues.FRACTIONAL: JPEGLSLossless,
         }[segmentation_type]
 
+        seg_start_time = time()
         segmentation = hd.seg.Segmentation(
             source_images=[source_image_metadata],
             pixel_array=segmentation_tiles,
@@ -413,6 +399,8 @@ def convert_annotations(
             transfer_syntax_uid=transfer_syntax_uid,
             max_fractional_value=1,
         )
+        seg_time = time() - seg_start_time
+        logging.info(f"Created DICOM Segmentation in in {seg_time:.1f}s.")
     else:
         segmentation = None
 

@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 import os
 import tarfile
+from time import time
 from typing import List, Generator, Optional
 
 import click
@@ -315,6 +316,8 @@ def run(
             if not ann_blob.name.endswith('.svs.tar.gz'):
                 continue
 
+            image_start_time = time()
+
             # Massage the blob name to derive container information
             # eg TCGA-05-4244-01Z-00-DX1.d4ff32cd-38cf-40ea-8213-45c2b100ac01
             filename = (
@@ -448,6 +451,10 @@ def run(
                 if with_segmentation:
                     logging.info(f"Writing segmentation to {dicom_archive}.")
                     web_client.store_instances([seg_dcm])
+
+            image_stop_time = time()
+            time_for_image = image_stop_time - image_start_time
+            logging.info(f"Processed {container_id} in {time_for_image:.2f}s")
 
 
 if __name__ == "__main__":
