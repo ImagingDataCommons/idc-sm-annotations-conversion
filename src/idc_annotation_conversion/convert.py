@@ -2,7 +2,6 @@
 import logging
 from os import PathLike
 import multiprocessing as mp
-from socket import gethostname
 from tempfile import TemporaryDirectory
 from typing import Iterable, Optional, Tuple, Union
 
@@ -14,9 +13,9 @@ import pandas as pd
 from dicomweb_client import DICOMfileClient
 from pydicom import Dataset
 from pydicom.sr.codedict import codes
-from pydicom.sr.coding import Code
 from pydicom.uid import JPEGLSLossless, ExplicitVRLittleEndian
 from shapely.geometry.polygon import Polygon
+from idc_annotation_conversion import metadata_config
 
 
 def disassemble_total_pixel_matrix(
@@ -339,27 +338,17 @@ def convert_annotations(
 
     logging.info(f"Parsed {len(graphic_data)} annotations.")
 
-    name = 'Pan-Cancer-Nuclei-Seg'
-    algorithm_identification = hd.AlgorithmIdentificationSequence(
-        name=name,
-        version='1.0',
-        family=codes.cid7162.ArtificialIntelligence,
-    )
-
-    finding_category = Code("91723000", "SCT", "Anatomical Stucture")
-    finding_type = Code("84640000", "SCT", "Nucleus")
-
     logging.info("Creating annotation.")
     group = hd.ann.AnnotationGroup(
         number=1,
         uid=hd.UID(),
-        label='nuclei',
-        annotated_property_category=finding_category,
-        annotated_property_type=finding_type,
+        label=metadata_config.annotation_label,
+        annotated_property_category=metadata_config.finding_category,
+        annotated_property_type=metadata_config.finding_type,
         graphic_type=graphic_type,
         graphic_data=graphic_data,
         algorithm_type=hd.ann.AnnotationGroupGenerationTypeValues.AUTOMATIC,
-        algorithm_identification=algorithm_identification,
+        algorithm_identification=metadata_config.algorithm_identification,
         measurements=[
             hd.ann.Measurements(
                 name=name,
@@ -377,10 +366,10 @@ def convert_annotations(
         series_number=204,
         sop_instance_uid=hd.UID(),
         instance_number=1,
-        manufacturer='MGH Computational Pathology',
-        manufacturer_model_name="tumor-classification",
-        software_versions='1.0',
-        device_serial_number=gethostname()
+        manufacturer=metadata_config.manufacturer,
+        manufacturer_model_name=metadata_config.manufacturer_model_name,
+        software_versions=metadata_config.software_versions,
+        device_serial_number=metadata_config.device_serial_number,
     )
 
     if include_segmentation:
@@ -394,11 +383,11 @@ def convert_annotations(
 
         segment_description = hd.seg.SegmentDescription(
             segment_number=1,
-            segment_label='Nuclei',
-            segmented_property_category=finding_category,
-            segmented_property_type=finding_type,
+            segment_label=metadata_config.label,
+            segmented_property_category=metadata_config.finding_category,
+            segmented_property_type=metadata_config.finding_type,
             algorithm_type=hd.seg.SegmentAlgorithmTypeValues.AUTOMATIC,
-            algorithm_identification=algorithm_identification
+            algorithm_identification=metadata_config.algorithm_identification
         )
 
         # Compression method depends on what is possible given the chosen
@@ -417,10 +406,10 @@ def convert_annotations(
             series_number=20,
             sop_instance_uid=hd.UID(),
             instance_number=1,
-            manufacturer='MGH Computational Pathology',
-            manufacturer_model_name="tumor-classification",
-            software_versions='1.0',
-            device_serial_number=gethostname(),
+            manufacturer=metadata_config.manufacturer,
+            manufacturer_model_name=metadata_config.manufacturer_model_name,
+            software_versions=metadata_config.software_versions,
+            device_serial_number=metadata_config.device_serial_number,
             transfer_syntax_uid=transfer_syntax_uid,
             max_fractional_value=1,
         )
