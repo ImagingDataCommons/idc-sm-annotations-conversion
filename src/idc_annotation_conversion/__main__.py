@@ -267,6 +267,10 @@ def run(
 
     logging.basicConfig(level=logging.INFO)
 
+    # Suppress highdicom logging (very talkative)
+    logging.getLogger("highdicom.base").setLevel(logging.WARNING)
+    logging.getLogger("highdicom.seg.sop").setLevel(logging.WARNING)
+
     # Setup project and authenticate
     os.environ["GCP_PROJECT_ID"] = cloud_config.GCP_PROJECT_ID
 
