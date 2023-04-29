@@ -13,7 +13,6 @@ def get_git_commit_hash() -> str:
 
     """
     try:
-        print(__file__)
         repo = git.Repo(__file__, search_parent_directories=True)
     except git.InvalidGitRepositoryError:
         return "unknown"
