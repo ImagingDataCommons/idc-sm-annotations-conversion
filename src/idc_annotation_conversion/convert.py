@@ -356,7 +356,6 @@ def convert_annotations(
         raster_start_time = time()
         segmentation_mask = rasterize(polygons, mask_shape, dtype=np.uint8)
         raster_time = time() - raster_start_time
-        segmentation_mask = segmentation_mask.astype(bool)
         logging.info(f"Completed rasterization in {raster_time:.1f}s.")
 
         logging.info("Creating DICOM segmentation image.")
