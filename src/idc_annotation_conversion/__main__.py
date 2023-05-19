@@ -332,7 +332,10 @@ def run(
             )
 
             # eg TCGA-05-4244-01Z-00-DX1, d4ff32cd-38cf-40ea-8213-45c2b100ac01
-            container_id, crdc_instance_uuid = filename.split('.')
+            if '.' in filename:
+                container_id, _ = filename.split('.')
+            else:
+                container_id = filename
 
             logging.info(f"Processing container: {container_id}")
 
@@ -349,6 +352,13 @@ def run(
             """
             selection_result = bq_client.query(selection_query)
             selection_df = selection_result.result().to_dataframe()
+
+            if len(selection_df) == 0:
+                # No image found, skip this for now
+                logging.error(
+                    f"Could not locate image for container {container_id}."
+                )
+                continue
 
             # Choose the instance uid as one with most frames (highest res)
             ins_uuid = selection_df.crdc_instance_uuid.iloc[-1]
