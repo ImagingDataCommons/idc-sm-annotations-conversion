@@ -64,6 +64,7 @@ def disassemble_total_pixel_matrix(
 def process_csv_row(
     csv_row: pd.Series,
     transformer: hd.spatial.ImageToReferenceTransformer,
+    area_per_pixel_um2: float,
     store_boundary: bool = True,
     annotation_coordinate_type: hd.ann.AnnotationCoordinateTypeValues = hd.ann.AnnotationCoordinateTypeValues.SCOORD,  # noqa: E501
 ) -> Tuple[Polygon, np.ndarray, float]:
@@ -76,6 +77,8 @@ def process_csv_row(
     transformer: hd.spatial.ImageToReferenceTransformer
         Transformer object to map image coordinates to reference coordinates
         for the image.
+    area_per_pixel_um2: float
+        Area of each pixel in square micrometers.
     store_boundary: bool, optional
         Store the full nucleus boundary polygon in the Bulk Microscopy Bulk
         Simple Annotations. If False, just the centroid is stored as a single
@@ -100,21 +103,25 @@ def process_csv_row(
         csv_row.Polygon[1:-1].split(':'),
         dtype=np.float32
     )
+    area_pix = float(csv_row.AreaInPixels)
+    area_um2 = area_pix * area_per_pixel_um2
     n = len(points) // 2
     coordinates_image = points.reshape(n, 2)
     if coordinates_image.shape[0] < 3:
         return None, None, None
     polygon_image = Polygon(coordinates_image)
 
-    coordinates_ref = transformer(coordinates_image)
-    polygon_ref = Polygon(coordinates_ref)
+    use_3d = (
+        annotation_coordinate_type ==
+        hd.ann.AnnotationCoordinateTypeValues.SCOORD3D
+    )
+    if use_3d:
+        coordinates_ref = transformer(coordinates_image)
+        polygon_ref = Polygon(coordinates_ref)
 
     if store_boundary:
         # Store the full polygon in graphic data
-        if (
-            annotation_coordinate_type ==
-            hd.ann.AnnotationCoordinateTypeValues.SCOORD3D
-        ):
+        if use_3d:
             coords = np.array(polygon_ref.exterior.coords)
         else:
             # 2D total pixel matrix coordinates
@@ -125,10 +132,7 @@ def process_csv_row(
         graphic_data = coords
     else:
         # Store the centroid of the polygon only, as a single point
-        if (
-            annotation_coordinate_type ==
-            hd.ann.AnnotationCoordinateTypeValues.SCOORD3D
-        ):
+        if use_3d:
             x, y = polygon_ref.centroid.xy
             centroid = np.array([[x[0], y[0], 0.]])
         else:
@@ -137,18 +141,19 @@ def process_csv_row(
             centroid = np.array([[x[0], y[0]]])
         graphic_data = centroid
 
-    area = float(polygon_ref.area)
-
-    return polygon_image, graphic_data, area
+    return polygon_image, graphic_data, area_um2
 
 
 def pool_init(
     transformer: hd.spatial.ImageToReferenceTransformer,
+    area_per_pixel_um2: float,
     store_boundary: bool = True,
     annotation_coordinate_type: hd.ann.AnnotationCoordinateTypeValues = hd.ann.AnnotationCoordinateTypeValues.SCOORD,  # noqa: E501
 ):
     global transformer_global
     transformer_global = transformer
+    global area_per_pixel_um2_global
+    area_per_pixel_um2_global = area_per_pixel_um2
     global store_boundary_global
     store_boundary_global = store_boundary
     global annotation_coordinate_type_global
@@ -159,6 +164,7 @@ def pool_fun(csv_row: pd.Series):
     return process_csv_row(
         csv_row,
         transformer_global,
+        area_per_pixel_um2_global,
         store_boundary_global,
         annotation_coordinate_type_global,
     )
@@ -248,6 +254,7 @@ def convert_annotations(
         image_position=image_position,
         pixel_spacing=pixel_spacing,
     )
+    area_per_pixel_um2 = pixel_spacing[0] * pixel_spacing[1] * 1e6
 
     graphic_type = (
         hd.ann.GraphicTypeValues.POLYGON
@@ -270,7 +277,12 @@ def convert_annotations(
         with mp.Pool(
             workers,
             initializer=pool_init,
-            initargs=(transformer, store_boundary, annotation_coordinate_type)
+            initargs=(
+                transformer,
+                area_per_pixel_um2,
+                store_boundary,
+                annotation_coordinate_type,
+            )
         ) as pool:
             results = pool.map(
                 pool_fun,
@@ -298,6 +310,7 @@ def convert_annotations(
                 contour_image, graphic_item, area = process_csv_row(
                     csv_row,
                     transformer,
+                    area_per_pixel_um2,
                     store_boundary,
                     annotation_coordinate_type,
                 )
