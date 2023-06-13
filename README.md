@@ -1,6 +1,9 @@
 # IDC Annotation Conversion
 
-Python project for converting Nuclei segmentation annotations to the DICOM format.
+Python project for converting Nuclei segmentation annotations to the DICOM
+format for ingestion into the Imaging Data Commons.
+
+The code in this repository is currently under development.
 
 ### Installation
 
