@@ -181,11 +181,32 @@ def get_dicom_web_client(
     ),
 )
 @click.option(
+    "--dimension-organization-type",
+    "-t",
+    type=click.Choice(
+        [v.name for v in hd.DimensionOrganizationTypeValues],
+        case_sensitive=False,
+    ),
+    default="TILED_FULL",
+    show_default=True,
+    help=(
+        "Dimension organization type for segmentations. TILED_FULL (default) "
+        "or TILED_SPARSE."
+    ),
+)
+@click.option(
     "--with-segmentation/--without-segmentation",
     "-s/-S",
     default=True,
     show_default=True,
     help="Include a segmentation image in the output.",
+)
+@click.option(
+    "--create-pyramid/--no-create-pyramid",
+    "-p/-P",
+    default=True,
+    show_default=True,
+    help="Create a full segmentation pyramid series.",
 )
 @click.option(
     "--segmentation-type",
@@ -240,6 +261,8 @@ def run(
     annotation_coordinate_type: str,
     with_segmentation: bool,
     segmentation_type: str,
+    dimension_organization_type: str,
+    create_pyramid: bool,
     dicom_archive: Optional[str] = None,
     archive_token_url: Optional[str] = None,
     archive_client_id: Optional[str] = None,
@@ -348,7 +371,7 @@ def run(
                 WHERE
                     ContainerIdentifier='{container_id}'
                 ORDER BY
-                    NumberOfFrames
+                    NumberOfFrames DESC
             """
             selection_result = bq_client.query(selection_query)
             selection_df = selection_result.result().to_dataframe()
@@ -360,52 +383,39 @@ def run(
                 )
                 continue
 
-            # Choose the instance uid as one with most frames (highest res)
-            ins_uuid = selection_df.crdc_instance_uuid.iloc[-1]
-
-            if (
-                store_wsi_dicom and
-                (output_dir is not None or dicom_archive is not None)
-            ):
-                for i, uuid in enumerate(selection_df.crdc_instance_uuid):
-                    wsi_dcm = cloud_io.read_dataset_from_blob(
-                        bucket=public_bucket,
-                        blob_name=f"{uuid}.dcm",
-                    )
-
-                    # Store to disk
-                    if output_dir is not None:
-                        wsi_path = (
-                            collection_dir / f"{container_id}_im_{i}.dcm"
-                        )
-                        wsi_dcm.save_as(wsi_path)
-
-                    # Store to DICOM archive
-                    if dicom_archive is not None:
-                        web_client = get_dicom_web_client(
-                            url=dicom_archive,
-                            token_url=archive_token_url,
-                            client_id=archive_client_id,
-                            client_secret=archive_client_secret,
-                        )
-                        web_client.store_instances([wsi_dcm])
-
-                # Keep the last (highest res) for later
-                dcm_meta = wsi_dcm
-            else:
-                # Download the DICOM file and load metadata only
-                dcm_meta = cloud_io.read_dataset_from_blob(
+            source_images = []
+            for i, uuid in enumerate(selection_df.crdc_instance_uuid):
+                wsi_dcm = cloud_io.read_dataset_from_blob(
                     bucket=public_bucket,
-                    blob_name=f'{ins_uuid}.dcm',
-                    stop_before_pixels=True,
+                    blob_name=f"{uuid}.dcm",
                 )
+                source_images.append(wsi_dcm)
 
-            ann_dcm, seg_dcm = convert_annotations(
+                # Store to disk
+                if output_dir is not None:
+                    wsi_path = (
+                        collection_dir / f"{container_id}_im_{i}.dcm"
+                    )
+                    wsi_dcm.save_as(wsi_path)
+
+                # Store to DICOM archive
+                if dicom_archive is not None:
+                    web_client = get_dicom_web_client(
+                        url=dicom_archive,
+                        token_url=archive_token_url,
+                        client_id=archive_client_id,
+                        client_secret=archive_client_secret,
+                    )
+                    web_client.store_instances([wsi_dcm])
+
+            ann_dcm, seg_dcms = convert_annotations(
                 annotation_csvs=iter_csvs(ann_blob),
-                source_image_metadata=dcm_meta,
+                source_images=source_images,
                 include_segmentation=with_segmentation,
                 segmentation_type=segmentation_type,
                 annotation_coordinate_type=annotation_coordinate_type,
+                dimension_organization_type=dimension_organization_type,
+                create_pyramid=create_pyramid,
                 store_boundary=store_boundary,
                 workers=workers,
             )
@@ -419,9 +429,6 @@ def run(
                 ann_blob_name = (
                     f"{blob_root}{collection}/{container_id}_ann.dcm"
                 )
-                seg_blob_name = (
-                    f"{blob_root}{collection}/{container_id}_seg.dcm"
-                )
 
                 logging.info(f"Uploading annotation to {ann_blob_name}.")
                 cloud_io.write_dataset_to_blob(
@@ -430,24 +437,31 @@ def run(
                     ann_blob_name,
                 )
                 if with_segmentation:
-                    logging.info(f"Uploading segmentation to {seg_blob_name}.")
-                    cloud_io.write_dataset_to_blob(
-                        seg_dcm,
-                        output_bucket_obj,
-                        seg_blob_name,
-                    )
+                    for s, seg_dcm in enumerate(seg_dcms):
+                        seg_blob_name = (
+                            f"{blob_root}{collection}/{container_id}_seg_{i}.dcm"
+                        )
+                        logging.info(
+                            f"Uploading segmentation to {seg_blob_name}."
+                        )
+                        cloud_io.write_dataset_to_blob(
+                            seg_dcm,
+                            output_bucket_obj,
+                            seg_blob_name,
+                        )
 
             # Store objects to filesystem
             if output_dir is not None:
                 ann_path = collection_dir / f"{container_id}_ann.dcm"
-                seg_path = collection_dir / f"{container_id}_seg.dcm"
 
                 logging.info(f"Writing annotation to {str(ann_path)}.")
                 ann_dcm.save_as(ann_path)
 
                 if with_segmentation:
-                    logging.info(f"Writing segmentation to {str(seg_path)}.")
-                    seg_dcm.save_as(seg_path)
+                    for s, seg_dcm in enumerate(seg_dcms):
+                        seg_path = collection_dir / f"{container_id}_seg_{s}.dcm"
+                        logging.info(f"Writing segmentation to {str(seg_path)}.")
+                        seg_dcm.save_as(seg_path)
 
             # Store objects to DICOM archive
             if dicom_archive is not None:
@@ -463,8 +477,9 @@ def run(
                 web_client.store_instances([ann_dcm])
 
                 if with_segmentation:
-                    logging.info(f"Writing segmentation to {dicom_archive}.")
-                    web_client.store_instances([seg_dcm])
+                    logging.info(f"Writing segmentation(s) to {dicom_archive}.")
+                    for seg_dcm in seg_dcms:
+                        web_client.store_instances([seg_dcm])
 
             image_stop_time = time()
             time_for_image = image_stop_time - image_start_time
