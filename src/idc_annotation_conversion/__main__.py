@@ -439,7 +439,7 @@ def run(
                 if with_segmentation:
                     for s, seg_dcm in enumerate(seg_dcms):
                         seg_blob_name = (
-                            f"{blob_root}{collection}/{container_id}_seg_{i}.dcm"
+                            f"{blob_root}{collection}/{container_id}_seg_{s}.dcm"
                         )
                         logging.info(
                             f"Uploading segmentation to {seg_blob_name}."
