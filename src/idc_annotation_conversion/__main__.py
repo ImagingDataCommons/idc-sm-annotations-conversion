@@ -203,7 +203,7 @@ def get_dicom_web_client(
 )
 @click.option(
     "--create-pyramid/--no-create-pyramid",
-    "-p/-P",
+    "-q/-Q",
     default=True,
     show_default=True,
     help="Create a full segmentation pyramid series.",
