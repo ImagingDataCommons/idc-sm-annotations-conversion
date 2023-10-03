@@ -8,6 +8,32 @@ from idc_annotation_conversion.git_utils import (
 )
 
 
+def simplify_remote(remote: str) -> str:
+    """Simplify a remote URL if necessary to keep it below 64 characters."""
+    if len(remote) <= 64:
+        return remote
+
+    # Strip from start and end
+    if remote.endswith(".git"):
+        remote = remote[:-4]
+    for start_str in ["http://", "https://", "git@"]:
+        if remote.startswith(start_str):
+            remote = remote[len(start_str):]
+
+    if len(remote) <= 64:
+        return remote
+
+    remote = remote.replace("github.com:", "github:")
+    remote = remote.replace("github.com/", "github:")
+
+    if len(remote) > 64:
+        raise ValueError(
+            "Cannot simplify URL of the remote to be 64 characters or fewer."
+        )
+
+    return remote
+
+
 # Basic Metadata
 manufacturer = "Stony Brook University"
 manufacturer_model_name = "Pan-Cancer-Nuclei-Seg"
