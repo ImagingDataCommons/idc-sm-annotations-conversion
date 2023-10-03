@@ -37,7 +37,7 @@ def simplify_remote(remote: str) -> str:
 # Basic Metadata
 manufacturer = "Stony Brook University"
 manufacturer_model_name = "Pan-Cancer-Nuclei-Seg"
-software_versions = get_git_remote_url()
+software_versions = simplify_remote(get_git_remote_url())
 device_serial_number = get_git_commit_hash()
 
 # Label description
