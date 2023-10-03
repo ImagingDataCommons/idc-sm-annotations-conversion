@@ -182,7 +182,7 @@ def get_dicom_web_client(
 )
 @click.option(
     "--dimension-organization-type",
-    "-t",
+    "-T",
     type=click.Choice(
         [v.name for v in hd.DimensionOrganizationTypeValues],
         case_sensitive=False,
