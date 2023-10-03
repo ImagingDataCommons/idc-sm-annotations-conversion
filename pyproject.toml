@@ -9,7 +9,7 @@ packages = [{include = "idc_annotation_conversion", from = "src" }]
 [tool.poetry.dependencies]
 python = "^3.9"
 pydicom = "^2.3.1"
-highdicom = { git = "https://github.com/ImagingDataCommons/highdicom.git", rev="08588005e51db0b3ab78d95df726717e5f110e25" }
+highdicom = { git = "https://github.com/ImagingDataCommons/highdicom.git", rev="400cee781095aff38d750221f15f82edaeb97843" }
 google-cloud-bigquery = "^3.6.0"
 google-cloud-storage = "^2.7.0"
 google-auth = "^2.16.2"
