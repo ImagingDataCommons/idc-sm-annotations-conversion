@@ -50,8 +50,8 @@ def process_csv_row(
     polygon_image: shapely.Polygon
         Polygon (in image coordinates) representing the annotation in the CSV.
     graphic_data: np.ndarray
-        Numpy array of coordinates to include in the Bulk Microscopy Simple
-        Annotations.
+        Numpy array of float32 coordinates to include in the Bulk Microscopy
+        Simple Annotations.
     area: float
         Area measurement of this polygon.
 
@@ -98,7 +98,7 @@ def process_csv_row(
             centroid = np.array([[x[0], y[0]]])
         graphic_data = centroid
 
-    return polygon_image, graphic_data, area_um2
+    return polygon_image, graphic_data.astype(np.float32), area_um2
 
 
 def pool_init(
