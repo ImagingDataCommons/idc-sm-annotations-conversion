@@ -16,8 +16,9 @@ import highdicom as hd
 from oauthlib.oauth2 import BackendApplicationClient
 from requests_oauthlib import OAuth2Session
 
-from idc_annotation_conversion import cloud_config, cloud_io
-from idc_annotation_conversion.convert import convert_annotations
+from idc_annotation_conversion import cloud_io
+from idc_annotation_conversion.pan_cancer_nuclei_seg.convert import convert_annotations
+from idc_annotation_conversion.pan_cancer_nuclei_seg import cloud_config
 
 
 COLLECTIONS = [

@@ -33,6 +33,7 @@ share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+pyrightconfig.json
 
 # Spyder project settings
 .spyderproject

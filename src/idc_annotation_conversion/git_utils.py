@@ -1,3 +1,4 @@
+"""Utilities for getting information from git SCM."""
 import git
 
 
@@ -24,7 +25,33 @@ def get_git_commit_hash() -> str:
     return commit_hash
 
 
-def get_git_remote_url() -> str:
+def simplify_remote(remote: str) -> str:
+    """Simplify a remote URL if necessary to keep it below 64 characters."""
+    if len(remote) <= 64:
+        return remote
+
+    # Strip from start and end
+    if remote.endswith(".git"):
+        remote = remote[:-4]
+    for start_str in ["http://", "https://", "git@"]:
+        if remote.startswith(start_str):
+            remote = remote[len(start_str):]
+
+    if len(remote) <= 64:
+        return remote
+
+    remote = remote.replace("github.com:", "github:")
+    remote = remote.replace("github.com/", "github:")
+
+    if len(remote) > 64:
+        raise ValueError(
+            "Cannot simplify URL of the remote to be 64 characters or fewer."
+        )
+
+    return remote
+
+
+def get_git_remote_url(simplify: bool = True) -> str:
     """Get the remote URL of the git repository in which this code is found.
 
     Returns
@@ -52,5 +79,8 @@ def get_git_remote_url() -> str:
             .replace(":", "/")
             .replace("git@", "https://")
         )
+
+    if simplify:
+        remote = simplify_remote(remote)
 
     return remote
