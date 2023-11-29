@@ -18,7 +18,10 @@ from requests_oauthlib import OAuth2Session
 
 from idc_annotation_conversion import cloud_io
 from idc_annotation_conversion.pan_cancer_nuclei_seg.convert import convert_annotations
-from idc_annotation_conversion.pan_cancer_nuclei_seg import cloud_config
+from idc_annotation_conversion import cloud_config
+
+
+ANNOTATION_BUCKET = "tcia-nuclei-seg"
 
 
 COLLECTIONS = [
@@ -300,7 +303,7 @@ def run(
 
     # Access bucket containing annotations
     storage_client = storage.Client(project=cloud_config.GCP_PROJECT_ID)
-    ann_bucket = storage_client.bucket(cloud_config.ANNOTATION_BUCKET)
+    ann_bucket = storage_client.bucket(ANNOTATION_BUCKET)
     public_bucket = storage_client.bucket(cloud_config.DICOM_IMAGES_BUCKET)
 
     # Setup bigquery client
@@ -393,7 +396,7 @@ def run(
                 source_images.append(wsi_dcm)
 
                 # Store to disk
-                if output_dir is not None:
+                if output_dir is not None and store_wsi_dicom:
                     wsi_path = (
                         collection_dir / f"{container_id}_im_{i}.dcm"
                     )
