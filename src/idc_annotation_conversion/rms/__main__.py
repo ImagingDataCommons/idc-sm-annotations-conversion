@@ -111,8 +111,10 @@ def run(
             FROM
                 bigquery-public-data.idc_v16.dicom_all
             WHERE
-                ContainerIdentifier LIKE '{id1}%'
+                ContainerIdentifier LIKE "{id1}%"
                 AND collection_id = "rms_mutation_prediction"
+                AND ARRAY_TO_STRING(ImageType,",") LIKE "%VOLUME%"
+                AND LossyImageCompression = "00"
             ORDER BY
                 NumberOfFrames DESC
         """
