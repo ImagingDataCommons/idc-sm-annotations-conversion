@@ -39,6 +39,7 @@ def convert_xml_annotation(
     """
     source_image = source_images[0]
     assert xml_annotation.tag == "Annotations"
+    microns_per_pixel = float(xml_annotation.attrib["MicronsPerPixel"])
 
     roi_groups = []
 
@@ -91,16 +92,11 @@ def convert_xml_annotation(
                     origin_seq.YOffsetInSlideCoordinateSystem,
                     0.0
                 )
-                pixel_spacing = (
-                    source_image
-                    .SharedFunctionalGroupsSequence[0]
-                    .PixelMeasuresSequence[0]
-                    .PixelSpacing
-                )
+                pixel_spacing_mm = microns_per_pixel / 1000.0
                 transformer = hd.spatial.ImageToReferenceTransformer(
                     image_position=origin,
                     image_orientation=source_image.ImageOrientationSlide,
-                    pixel_spacing=pixel_spacing,
+                    pixel_spacing=(pixel_spacing_mm, pixel_spacing_mm),
                 )
                 graphic_data_3d = transformer(graphic_data)
                 image_region: Union[
