@@ -1,5 +1,5 @@
 """Functions to convert single annotations into SRs"""
-from typing import List
+from typing import List, Union
 import xml
 
 import highdicom as hd
@@ -13,7 +13,8 @@ from idc_annotation_conversion.rms import metadata_config
 def convert_xml_annotation(
     xml_annotation: xml.etree.ElementTree.Element,
     source_images: List[Dataset],
-) -> hd.sr.ComprehensiveSR:
+    use_scoord3d: bool = True,
+) -> hd.sr.Comprehensive3DSR:
     """Convert an ImageScope XML annotation to a DICOM SR.
 
     Parameters
@@ -24,13 +25,16 @@ def convert_xml_annotation(
         List of dataset of the source images to which the annotation applies.
         The first item in this list is assumed to be the dataset whose pixels
         correspond to the image coordinates found in the XML.
+    use_scoord3d: bool
+        Use SCOORD3D coordinates to store points.
 
     Returns
     -------
-    highdicom.sr.ComprehensiveSR:
+    highdicom.sr.Comprehensive3DSR:
         DICOM SR object encoding the annotation.
 
     """
+    source_image = source_images[0]
     assert xml_annotation.tag == "Annotations"
 
     roi_groups = []
@@ -58,13 +62,43 @@ def convert_xml_annotation(
             tracking_identifier = hd.sr.TrackingIdentifier(hd.UID(), region_id)
             finding_str = region.attrib["Text"]
             finding_type, finding_category = metadata_config.finding_codes[finding_str]
-            image_region = hd.sr.ImageRegion(
-                graphic_type=hd.sr.GraphicTypeValues.POLYLINE,
-                graphic_data=graphic_data,
-                source_image=hd.sr.SourceImageForRegion.from_source_image(
-                    source_images[0]
-                ),
-            )
+
+            if use_scoord3d:
+                origin_seq = source_image.TotalPixelMatrixOriginSequence[0]
+                origin = (
+                    origin_seq.XOffsetInSlideCoordinateSystem,
+                    origin_seq.YOffsetInSlideCoordinateSystem,
+                    0.0
+                )
+                pixel_spacing = (
+                    source_image
+                    .SharedFunctionalGroupsSequence[0]
+                    .PixelMeasuresSequence[0]
+                    .PixelSpacing
+                )
+                transformer = hd.spatial.ImageToReferenceTransformer(
+                    image_position=origin,
+                    image_orientation=source_image.ImageOrientationSlide,
+                    pixel_spacing=pixel_spacing,
+                )
+                graphic_data_3d = transformer(graphic_data)
+                image_region: Union[
+                    hd.sr.ImageRegion,
+                    hd.sr.ImageRegion3D
+                ] = hd.sr.ImageRegion3D(
+                    graphic_type=hd.sr.GraphicTypeValues3D.POLYLINE,
+                    graphic_data=graphic_data_3d,
+                    frame_of_reference_uid=source_image.FrameOfReferenceUID,
+                )
+            else:
+                image_region = hd.sr.ImageRegion(
+                    graphic_type=hd.sr.GraphicTypeValues.POLYLINE,
+                    graphic_data=graphic_data,
+                    source_image=hd.sr.SourceImageForRegion.from_source_image(
+                        source_images[0]
+                    ),
+                )
+
             area_measurement = hd.sr.Measurement(
                 name=codes.SCT.Area,
                 value=float(region.attrib["AreaMicrons"]),
@@ -92,7 +126,7 @@ def convert_xml_annotation(
         referenced_images=source_images,
     )
 
-    sr = hd.sr.ComprehensiveSR(
+    sr = hd.sr.Comprehensive3DSR(
         evidence=source_images,
         content=measurement_report,
         series_number=1,

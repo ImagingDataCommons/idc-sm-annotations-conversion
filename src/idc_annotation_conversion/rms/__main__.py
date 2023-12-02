@@ -60,6 +60,13 @@ ANNOTATION_BUCKET = "rms_annotation_test_oct_2023"
     type=int,
     help="Number to process per collection. All by default.",
 )
+@click.option(
+    "--use-scoord3d/--no-use-scoord3d",
+    "-s/-S",
+    default=False,
+    show_default=True,
+    help="Store coordinates as SCOORD3D (versus 2D SCOORD).",
+)
 def run(
     number: Optional[int],
     output_dir: Optional[Path],
@@ -67,6 +74,7 @@ def run(
     output_prefix: Optional[str],
     store_bucket: bool,
     store_wsi_dicom: bool,
+    use_scoord3d: bool,
 ):
     """Main process for conversion of RMS XML annotations to DICOM SRs."""
     logging.basicConfig(level=logging.INFO)
@@ -145,7 +153,11 @@ def run(
         ]
 
         logging.info("Creating SR.")
-        sr_dcm = convert_xml_annotation(xml_root, wsi_dcm)
+        sr_dcm = convert_xml_annotation(
+            xml_root,
+            wsi_dcm,
+            use_scoord3d=use_scoord3d,
+        )
         logging.info("SR created.")
 
         # Store objects to bucket
