@@ -39,6 +39,24 @@ def convert_xml_annotation(
 
     roi_groups = []
 
+    origin_seq = source_image.TotalPixelMatrixOriginSequence[0]
+    origin = (
+        origin_seq.XOffsetInSlideCoordinateSystem,
+        origin_seq.YOffsetInSlideCoordinateSystem,
+        0.0
+    )
+    pixel_spacing = (
+        source_image
+        .SharedFunctionalGroupsSequence[0]
+        .PixelMeasuresSequence[0]
+        .PixelSpacing
+    )
+    transformer = hd.spatial.ImageToReferenceTransformer(
+        image_position=origin,
+        image_orientation=source_image.ImageOrientationSlide,
+        pixel_spacing=pixel_spacing,
+    )
+
     for annotation in xml_annotation:
         assert annotation.tag == "Annotation"
 
@@ -86,13 +104,13 @@ def convert_xml_annotation(
                     hd.sr.ImageRegion,
                     hd.sr.ImageRegion3D
                 ] = hd.sr.ImageRegion3D(
-                    graphic_type=hd.sr.GraphicTypeValues3D.POLYLINE,
+                    graphic_type=hd.sr.GraphicTypeValues3D.POLYGON,
                     graphic_data=graphic_data_3d,
                     frame_of_reference_uid=source_image.FrameOfReferenceUID,
                 )
             else:
                 image_region = hd.sr.ImageRegion(
-                    graphic_type=hd.sr.GraphicTypeValues.POLYLINE,
+                    graphic_type=hd.sr.GraphicTypeValues.POLYGON,
                     graphic_data=graphic_data,
                     source_image=hd.sr.SourceImageForRegion.from_source_image(
                         source_images[0]
