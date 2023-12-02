@@ -14,6 +14,7 @@ def convert_xml_annotation(
     xml_annotation: xml.etree.ElementTree.Element,
     source_images: List[Dataset],
     use_scoord3d: bool = True,
+    include_measurements: bool = False,
 ) -> hd.sr.Comprehensive3DSR:
     """Convert an ImageScope XML annotation to a DICOM SR.
 
@@ -27,6 +28,8 @@ def convert_xml_annotation(
         correspond to the image coordinates found in the XML.
     use_scoord3d: bool
         Use SCOORD3D coordinates to store points.
+    include_measurements: bool
+        Include the measurements of length and area from the XML.
 
     Returns
     -------
@@ -110,34 +113,55 @@ def convert_xml_annotation(
                 )
             else:
                 image_region = hd.sr.ImageRegion(
-                    graphic_type=hd.sr.GraphicTypeValues.POLYGON,
+                    graphic_type=hd.sr.GraphicTypeValues.POLYLINE,
                     graphic_data=graphic_data,
                     source_image=hd.sr.SourceImageForRegion.from_source_image(
                         source_images[0]
                     ),
                 )
 
-            area_measurement = hd.sr.Measurement(
-                name=codes.SCT.Area,
-                value=float(region.attrib["AreaMicrons"]),
-                unit=codes.UCUM.SquareMicrometer,
-            )
-            length_measurement = hd.sr.Measurement(
-                name=codes.SCT.Length,
-                value=float(region.attrib["LengthMicrons"]),
-                unit=codes.UCUM.Micrometer,
-            )
+            if include_measurements:
+                area_measurement = hd.sr.Measurement(
+                    name=codes.SCT.Area,
+                    value=float(region.attrib["AreaMicrons"]),
+                    unit=codes.UCUM.SquareMicrometer,
+                )
+                length_measurement = hd.sr.Measurement(
+                    name=codes.SCT.Length,
+                    value=float(region.attrib["LengthMicrons"]),
+                    unit=codes.UCUM.Micrometer,
+                )
+                measurements = [area_measurement, length_measurement]
+            else:
+                measurements = None
+
             roi = hd.sr.PlanarROIMeasurementsAndQualitativeEvaluations(
                 tracking_identifier=tracking_identifier,
                 referenced_region=image_region,
                 finding_type=finding_type,
                 finding_category=finding_category,
-                measurements=[area_measurement, length_measurement],
+                measurements=measurements,
             )
             roi_groups.append(roi)
 
+    # TODO fold this logic into highdicom library
+    subject_context_specimen = hd.sr.SubjectContextSpecimen(
+        uid=source_image.SpecimenDescriptionSequence[0].SpecimenUID,
+        identifier=source_image.SpecimenDescriptionSequence[0].SpecimenIdentifier,
+        container_identifier=source_image.ContainerIdentifier,
+    )
+    subject_context = hd.sr.SubjectContext(
+        subject_class=codes.DCM.Specimen,
+        subject_class_specific_context=subject_context_specimen,
+    )
+
+    observation_context = hd.sr.ObservationContext(
+        observer_person_context=metadata_config.observer_person_context,
+        subject_context=subject_context,
+    )
+
     measurement_report = hd.sr.MeasurementReport(
-        observation_context=metadata_config.observation_context,
+        observation_context=observation_context,
         procedure_reported=metadata_config.procedure_reported,
         imaging_measurements=roi_groups,
         title=metadata_config.title,

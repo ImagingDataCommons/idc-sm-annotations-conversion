@@ -72,9 +72,6 @@ observer_person_context = hd.sr.ObserverContext(
         )
     )
 )
-observation_context = hd.sr.ObservationContext(
-    observer_person_context=observer_person_context,
-)
 
 series_description = "Manual region annotations"
 manufacturer = "manufacturer"
