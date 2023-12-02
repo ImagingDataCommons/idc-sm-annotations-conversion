@@ -176,7 +176,7 @@ def run(
                 "" if output_prefix is None else f"{output_prefix}/"
             )
             sr_blob_name = (
-                f"{blob_root}/{container_id}_sr.dcm"
+                f"{blob_root}{container_id}_sr.dcm"
             )
 
             logging.info(f"Uploading SR to {sr_blob_name}.")
