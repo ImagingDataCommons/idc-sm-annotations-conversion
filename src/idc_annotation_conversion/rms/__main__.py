@@ -63,7 +63,7 @@ ANNOTATION_BUCKET = "rms_annotation_test_oct_2023"
 @click.option(
     "--use-scoord3d/--no-use-scoord3d",
     "-s/-S",
-    default=False,
+    default=True,
     show_default=True,
     help="Store coordinates as SCOORD3D (versus 2D SCOORD).",
 )
