@@ -77,7 +77,7 @@ def convert_xml_annotation(
             )
             region_id = f"Region {region.attrib['Id']}: {region.attrib['Text']}"
             tracking_identifier = hd.sr.TrackingIdentifier(hd.UID(), region_id)
-            finding_str = region.attrib["Text"]
+            finding_str = region.attrib["Text"].upper()
             finding_type, finding_category = metadata_config.finding_codes[finding_str]
 
             if use_scoord3d:
