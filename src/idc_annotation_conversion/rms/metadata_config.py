@@ -66,19 +66,17 @@ observer_person_context = hd.sr.ObserverContext(
     observer_type=codes.DCM.Person,
     observer_identifying_attributes=hd.sr.PersonObserverIdentifyingAttributes(
         name=pydicom.valuerep.PersonName.from_named_components(
-            family_name="Brown",
-            given_name="G",
-            middle_name="Tom",
+            family_name="Anonymized",
         )
     )
 )
 
 series_description = "Manual region annotations"
-manufacturer = "manufacturer"
-manufacturer_model_name = "manufacturer_model_name"
+manufacturer = "Leica Biosystems"
+manufacturer_model_name = "Aperio ImageScope converted with highdicom"
 software_versions = get_git_remote_url(simplify=True)
 device_serial_number = get_git_commit_hash()
-institution_name = "institution_name"
-institutional_department_name = "institutional_department_name"
+institution_name = None
+institutional_department_name = None
 title = codes.DCM.ImagingMeasurementReport
 procedure_reported = codes.SCT.ImagingProcedure

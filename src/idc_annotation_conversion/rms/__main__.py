@@ -74,6 +74,12 @@ ANNOTATION_BUCKET = "rms_annotation_test_oct_2023"
     show_default=True,
     help="Include length and area measurements from the XML.",
 )
+@click.option(
+    "--excluded-cases",
+    "-e",
+    multiple=True,
+    help="Container IDs (before underscore) to skip. Multiple may be provided",
+)
 def run(
     number: Optional[int],
     output_dir: Optional[Path],
@@ -83,6 +89,7 @@ def run(
     store_wsi_dicom: bool,
     use_scoord3d: bool,
     include_measurements: bool,
+    excluded_cases: Optional[list[str]] = None,
 ):
     """Main process for conversion of RMS XML annotations to DICOM SRs."""
     logging.basicConfig(level=logging.INFO)
@@ -117,7 +124,12 @@ def run(
             continue
 
         logging.info(f"Processing annotation in {ann_blob.name}.")
-        id1, _ = ann_blob.name.split("/")[1].replace(".xml", "").split("-", maxsplit=1)
+        container_prefix, *_ = ann_blob.name.split("/")[1].replace(".xml", "").split("_", maxsplit=1)
+        if excluded_cases is not None:
+            if container_prefix in excluded_cases:
+                logging.info(f"Skipping case {container_prefix}.")
+                continue
+
         selection_query = f"""
             SELECT
                 ContainerIdentifier,
@@ -128,7 +140,7 @@ def run(
             FROM
                 bigquery-public-data.idc_v16.dicom_all
             WHERE
-                ContainerIdentifier LIKE "{id1}%"
+                ContainerIdentifier LIKE "{container_prefix}%"
                 AND collection_id = "rms_mutation_prediction"
                 AND ARRAY_TO_STRING(ImageType,",") LIKE "%VOLUME%"
                 AND LossyImageCompression = "00"
