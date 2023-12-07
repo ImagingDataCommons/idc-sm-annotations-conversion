@@ -110,7 +110,8 @@ def run(
     prefix = "RMS-XML-hand-annotations"
     for ann_blob in islice(
         ann_bucket.list_blobs(prefix=prefix),
-        number
+        1,  # first item is the directory itself
+        number + 1 if number is not None else None,
     ):
         if not ann_blob.name.endswith(".xml"):
             continue
