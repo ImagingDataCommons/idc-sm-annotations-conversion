@@ -24,8 +24,6 @@ def convert_xml_annotation(
         Pre-loaded root element of the annotation file's XML tree.
     source_images: List[pydicom.Dataset]
         List of dataset of the source images to which the annotation applies.
-        The first item in this list is assumed to be the dataset whose pixels
-        correspond to the image coordinates found in the XML.
     use_scoord3d: bool
         Use SCOORD3D coordinates to store points.
     include_measurements: bool
