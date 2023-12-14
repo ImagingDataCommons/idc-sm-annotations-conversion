@@ -148,6 +148,9 @@ def convert_xml_annotation(
     sr = hd.sr.Comprehensive3DSR(
         evidence=source_images,
         content=measurement_report,
+        is_complete=metadata_config.is_complete,
+        is_final=metadata_config.is_final,
+        is_verified=metadata_config.is_verified,
         series_number=1,
         series_instance_uid=hd.UID(),
         sop_instance_uid=hd.UID(),

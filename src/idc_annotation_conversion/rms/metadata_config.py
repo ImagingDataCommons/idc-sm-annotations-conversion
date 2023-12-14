@@ -80,3 +80,7 @@ institution_name = None
 institutional_department_name = None
 title = codes.DCM.ImagingMeasurementReport
 procedure_reported = codes.SCT.ImagingProcedure
+
+is_complete = True
+is_final = True
+is_verified = False
