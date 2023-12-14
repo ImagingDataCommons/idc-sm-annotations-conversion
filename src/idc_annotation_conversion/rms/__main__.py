@@ -151,16 +151,8 @@ def run(
         selection_df = selection_result.result().to_dataframe()
         container_id = selection_df.ContainerIdentifier.iloc[0]
 
-        if selection_df.crdc_series_uuid.nunique() > 1:
-            # TODO do something smarter here
-            chosen_series_uuid = selection_df.crdc_series_uuid.iloc[0]
-            selection_df = selection_df[
-                selection_df.crdc_series_uuid == chosen_series_uuid
-            ].copy()
-            logging.warning(
-                f"Found multiple series for container ID {container_id}. "
-                f"Choosing series {chosen_series_uuid}."
-            )
+        assert selection_df.crdc_series_uuid.nunique() > 1, "Found multiple source series"
+
         text = ann_blob.download_as_text()
         xml_root = ElementTree.fromstring(text)
 
