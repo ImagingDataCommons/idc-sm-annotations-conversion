@@ -151,7 +151,7 @@ def run(
         selection_df = selection_result.result().to_dataframe()
         container_id = selection_df.ContainerIdentifier.iloc[0]
 
-        assert selection_df.crdc_series_uuid.nunique() > 1, "Found multiple source series"
+        assert selection_df.crdc_series_uuid.nunique() == 1, "Found multiple source series"
 
         text = ann_blob.download_as_text()
         xml_root = ElementTree.fromstring(text)
