@@ -79,7 +79,11 @@ device_serial_number = get_git_commit_hash()
 institution_name = None
 institutional_department_name = None
 title = codes.DCM.ImagingMeasurementReport
-procedure_reported = codes.SCT.ImagingProcedure
+procedure_reported = hd.sr.CodedConcept(
+    meaning="Light microscopy",
+    value="104157003",
+    scheme_designator="SCT",
+)
 
 is_complete = True
 is_final = True
