@@ -19,7 +19,7 @@ pip install .
 Alternatively, you can install the package directly from remote with:
 
 ```bash
-pip install https://github.com/ImagingDataCommons/idc-pan-cancer-annotations-conversion.git
+pip install https://github.com/ImagingDataCommons/idc-sm-annotations-conversion.git
 ```
 
 ### Cloud Authentication
