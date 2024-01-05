@@ -1,6 +1,6 @@
 # IDC Annotation Conversion
 
-Python project for converting various pathology annotations into
+Python project for converting various pathology annotations into DICOM
 format for ingestion into the Imaging Data Commons.
 
 The code in this repository is currently under development.
