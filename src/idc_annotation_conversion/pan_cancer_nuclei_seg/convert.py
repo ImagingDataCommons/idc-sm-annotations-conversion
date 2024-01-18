@@ -24,7 +24,7 @@ def process_csv_row(
     area_per_pixel_um2: float,
     store_boundary: bool = True,
     annotation_coordinate_type: hd.ann.AnnotationCoordinateTypeValues = hd.ann.AnnotationCoordinateTypeValues.SCOORD,  # noqa: E501
-) -> Tuple[Polygon, np.ndarray, float] | Tuple[None, None, None]:
+) -> Union[Tuple[Polygon, np.ndarray, float], Tuple[None, None, None]]:
     """Process a single annotation CSV file.
 
     Parameters
