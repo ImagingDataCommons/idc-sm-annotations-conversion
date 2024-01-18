@@ -180,8 +180,7 @@ def run(
             if output_bucket is None:
                 data_str = (datetime.date.today())
                 output_bucket = (
-                    "pan_cancer_nuclei_seg_annotation_"
-                    f"conversion_{data_str}"
+                    f"rms_manual_annotation_sr_conversion_{data_str}"
                 )
             output_bucket_obj = output_client.bucket(output_bucket)
 
