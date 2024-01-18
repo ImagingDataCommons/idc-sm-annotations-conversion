@@ -73,6 +73,12 @@ def convert_xml_annotation(
                     for v in vertices
                 ]
             )
+
+            # Ensure polygon is closed (this seem to be inconsistent in the
+            # source XML files)
+            if not np.array_equal(graphic_data[0], graphic_data[-1]):
+                graphic_data = np.vstack([graphic_data, graphic_data[0]])
+
             region_id = f"Region {region.attrib['Id']}: {region.attrib['Text']}"
             tracking_identifier = hd.sr.TrackingIdentifier(hd.UID(), region_id)
             finding_str = region.attrib["Text"].upper()
