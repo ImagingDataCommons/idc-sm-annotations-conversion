@@ -4,9 +4,13 @@ GCP_PROJECT_ID = "idc-etl-processing"
 """The project ID to use for data access."""
 
 
+OUTPUT_GCP_PROJECT_ID = "idc-dev-etl"
+"""The project ID to use for creating output buckets."""
+
+
 DICOM_IMAGES_BUCKET = "public-datasets-idc"
 """Name of bucket containing DICOM WSIs."""
 
 
-DEFAULT_OUTPUT_BUCKET = "idc-annotation-conversion-outputs"
-"""Name of default bucket to store output annotations."""
+GCP_DEFAULT_LOCATION = "us-central1"
+"""Default location for creating new buckets."""

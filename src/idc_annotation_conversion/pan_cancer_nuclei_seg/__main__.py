@@ -1,3 +1,5 @@
+"""Entrypoint for Pan Cancer Nuclei Segmentation annotation conversion."""
+import datetime
 from io import BytesIO, BufferedReader
 from itertools import islice
 from getpass import getpass
@@ -135,7 +137,6 @@ def get_dicom_web_client(
     "--output-bucket",
     "-b",
     help="Output bucket",
-    default=cloud_config.DEFAULT_OUTPUT_BUCKET,
     show_default=True,
 )
 @click.option(
@@ -303,6 +304,7 @@ def run(
 
     # Access bucket containing annotations
     storage_client = storage.Client(project=cloud_config.GCP_PROJECT_ID)
+    output_client = storage.Client(project=cloud_config.OUTPUT_GCP_PROJECT_ID)
     ann_bucket = storage_client.bucket(ANNOTATION_BUCKET)
     public_bucket = storage_client.bucket(cloud_config.DICOM_IMAGES_BUCKET)
 
@@ -426,7 +428,17 @@ def run(
 
             # Store objects to bucket
             if store_bucket:
-                output_bucket_obj = storage_client.bucket(output_bucket)
+                if output_bucket is None:
+                    data_str = (datetime.date.today())
+                    output_bucket = (
+                        "pan_cancer_nuclei_seg_annotation_"
+                        f"conversion_{data_str}"
+                    )
+                output_bucket_obj = output_client.bucket(output_bucket)
+
+                if not output_bucket_obj.exists():
+                    output_bucket_obj.create(location=GCP_DEFAULT_LOCATION)
+
                 blob_root = (
                     "" if output_prefix is None else f"{output_prefix}/"
                 )
