@@ -186,7 +186,9 @@ def run(
             output_bucket_obj = output_client.bucket(output_bucket)
 
             if not output_bucket_obj.exists():
-                output_bucket_obj.create(location=GCP_DEFAULT_LOCATION)
+                output_bucket_obj.create(
+                    location=cloud_config.GCP_DEFAULT_LOCATION
+                )
 
             blob_root = (
                 "" if output_prefix is None else f"{output_prefix}/"
