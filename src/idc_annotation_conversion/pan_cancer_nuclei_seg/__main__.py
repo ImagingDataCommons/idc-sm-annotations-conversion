@@ -1,7 +1,6 @@
 """Entrypoint for Pan Cancer Nuclei Segmentation annotation conversion."""
 import datetime
 from io import BytesIO, BufferedReader
-from itertools import islice
 from getpass import getpass
 import logging
 from pathlib import Path
@@ -344,10 +343,15 @@ def run(
             collection_dir = output_dir / collection
             collection_dir.mkdir(exist_ok=True)
 
+        ann_blobs = [
+            b for b in ann_bucket.list_blobs(prefix=prefix)
+            if b.name.endswith('.svs.tar.gz')
+        ]
+        if number is not None:
+            ann_blobs = ann_blobs[:number]
+
         # Loop over annotations in the bucket for this collection
-        for ann_blob in islice(ann_bucket.list_blobs(prefix=prefix), number):
-            if not ann_blob.name.endswith('.svs.tar.gz'):
-                continue
+        for ann_blob in ann_blobs:
 
             image_start_time = time()
 

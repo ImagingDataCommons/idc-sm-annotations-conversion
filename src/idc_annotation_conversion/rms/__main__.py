@@ -216,5 +216,35 @@ def run(
                     dcm.save_as(dcm_path)
 
 
+@click.command()
+@click.option(
+    "--fractional/--binary",
+    "-f/-F",
+    help="Store as a fractional (probabilistic) mask.",
+    show_default=True,
+)
+def run_seg(fractional: bool):
+    ann_storage_client = storage.Client(project=ANNOTATION_BUCKET_PROJECT)
+    ann_bucket = ann_storage_client.bucket(ANNOTATION_BUCKET)
+
+    case = "PALMPL-0BMX5D-AKA-RMS2397"
+    case_prefix = "PALMPL-0BMX5D_1"
+    mask_type = "prob" if fractional else "pred"
+    mask_blob = ann_bucket.get_blob(
+        f"{case}/model_prediction/{case_prefix}_{mask_type}.png"
+    )
+
+    mask_bytes = mask_blob.download_as_bytes()
+    import numpy as np
+    from PIL import Image
+    Image.MAX_IMAGE_PIXELS = 1000000000
+    from io import BytesIO
+    mask_im = np.array(Image.open(BytesIO(mask_bytes)))
+    print(mask_im.shape)
+    print(np.unique(mask_im))
+    print(np.array_equal(mask_im[:, :, 0], mask_im[:, :, 1]))
+
+
+
 if __name__ == "__main__":
-    run()
+    run_seg()
