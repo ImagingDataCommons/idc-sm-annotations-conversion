@@ -151,13 +151,18 @@ def get_dicom_web_client(
     help="Prefix for all output blobs. Default no prefix.",
 )
 @click.option(
-    "--store-boundary/--store-centroid",
-    "-B/-C",
-    default=True,
+    "--graphic-type",
+    "-g",
+    default="POLYGON",
+    type=click.Choice(
+        [v.name for v in hd.ann.GraphicTypeValues],
+        case_sensitive=False,
+    ),
     show_default=True,
     help=(
-        "Store either the full boundary of each nucleus as a polygon "
-        "(default), or the just the centroid as a single point."
+        "Graphic type to use to store all nuclei. Note that all "
+        "but 'POLYGON' result in simplification and loss of "
+        "information in the annotations."
     ),
 )
 @click.option(
@@ -260,7 +265,7 @@ def run(
     output_bucket: str,
     output_prefix: Optional[str],
     store_bucket: bool,
-    store_boundary: bool,
+    graphic_type: str,
     store_wsi_dicom: bool,
     annotation_coordinate_type: str,
     with_segmentation: bool,
@@ -426,7 +431,7 @@ def run(
                 annotation_coordinate_type=annotation_coordinate_type,
                 dimension_organization_type=dimension_organization_type,
                 create_pyramid=create_pyramid,
-                store_boundary=store_boundary,
+                graphic_type=graphic_type,
                 workers=workers,
             )
 

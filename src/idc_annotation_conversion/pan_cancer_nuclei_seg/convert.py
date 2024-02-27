@@ -4,6 +4,7 @@ from os import PathLike
 import multiprocessing as mp
 from time import time
 from typing import Iterable, List, Optional, Sequence, Tuple, Union
+from click.decorators import GrpType
 
 import highdicom as hd
 import numpy as np
@@ -22,7 +23,7 @@ def process_csv_row(
     csv_row: pd.Series,
     transformer: hd.spatial.ImageToReferenceTransformer,
     area_per_pixel_um2: float,
-    store_boundary: bool = True,
+    graphic_type: hd.ann.GraphicTypeValues = hd.ann.GraphicTypeValues.POLYGON,
     annotation_coordinate_type: hd.ann.AnnotationCoordinateTypeValues = hd.ann.AnnotationCoordinateTypeValues.SCOORD,  # noqa: E501
 ) -> Union[Tuple[Polygon, np.ndarray, float], Tuple[None, None, None]]:
     """Process a single annotation CSV file.
@@ -36,10 +37,9 @@ def process_csv_row(
         for the image.
     area_per_pixel_um2: float
         Area of each pixel in square micrometers.
-    store_boundary: bool, optional
-        Store the full nucleus boundary polygon in the Bulk Microscopy Bulk
-        Simple Annotations. If False, just the centroid is stored as a single
-        point.
+    graphic_type: highdicom.ann.GraphicTypeValues, optional
+        Graphic type to use to store all nuclei. Note that all but 'POLYGON'
+        result in simplification and loss of information in the annotations.
     annotation_coordinate_type: Union[hd.ann.AnnotationCoordinateTypeValues, str], optional
         Store coordinates in the Bulk Microscopy Bulk Simple Annotations in the
         (3D) frame of reference (SCOORD3D), or the (2D) total pixel matrix
@@ -49,11 +49,14 @@ def process_csv_row(
     -------
     polygon_image: shapely.Polygon
         Polygon (in image coordinates) representing the annotation in the CSV.
+        Note that this is always the full original polygon regardless of the
+        requested graphic type.
     graphic_data: np.ndarray
         Numpy array of float32 coordinates to include in the Bulk Microscopy
         Simple Annotations.
     area: float
-        Area measurement of this polygon.
+        Area measurement of this polygon. Note that this is always the area of
+        the full original polygon regardless of the requested graphic type.
 
     """  # noqa: E501
     points = np.array(
@@ -63,40 +66,65 @@ def process_csv_row(
     area_pix = float(csv_row.AreaInPixels)
     area_um2 = area_pix * area_per_pixel_um2
     n = len(points) // 2
-    coordinates_image = points.reshape(n, 2)
-    if coordinates_image.shape[0] < 3:
+    full_coordinates_image = points.reshape(n, 2)
+    if full_coordinates_image.shape[0] < 3:
         return None, None, None
-    polygon_image = Polygon(coordinates_image)
+    polygon_image = Polygon(full_coordinates_image)
+
+    # Simplify the coordinates as required
+    if graphic_type == hd.ann.GraphicTypeValues.POLYGON:
+        coords = np.array(polygon_image.exterior.coords)
+        # Remove the final point (polygon should not be closed)
+        graphic_data = coords[:-1, :]
+    elif graphic_type == hd.ann.GraphicTypeValues.POINT:
+        x, y = polygon_image.centroid.xy
+        graphic_data = np.array([[x[0], y[0]]])
+    elif graphic_type == hd.ann.GraphicTypeValues.RECTANGLE:
+        # The rectangle need not be axis aligned but here we
+        # do standardize to an axis aligned rectangle
+        minx, miny, maxx, maxy = polygon_image.bounds
+        graphic_data = np.array(
+            [
+                [minx, miny],
+                [maxx, miny],
+                [maxx, maxy],
+            ]
+        )
+    elif graphic_type == hd.ann.GraphicTypeValues.ELLIPSE:
+        # Find the minimum rotated rectangle that includes all points in the
+        # polygon, then use the midpoints of these lines as the endpoints of
+        # the major and minor axes of the ellipse. This is a convenient, if
+        # somewhat crude way of approximating the polygon with an ellipse.
+        # Note that the resulting ellipse will not in general contain all the
+        # points of the original polygon, some may be outside
+        rec = np.array(polygon_image.minimum_rotated_rectangle.coords)
+
+        # Array of midpoints
+        graphic_data = np.array(
+            [
+                (rec[0] + rec[1]) / 2,
+                (rec[2] + rec[3]) / 2,
+                (rec[1] + rec[2]) / 2,
+                (rec[0] + rec[3]) / 2,
+            ]
+        )
+        # Ensure we have the major axis endpoints first
+        d1 = np.linalg.norm(graphic_data[1] - graphic_data[0])
+        d2 = np.linalg.norm(graphic_data[3] - graphic_data[2])
+        if d2 > d1:
+            # Swap first two points with second two points
+            graphic_data = graphic_data[[2, 3, 0, 1], :]
+    else:
+        raise ValueError(
+            f"Graphic type '{graphic_type.value}' not supported."
+        )
 
     use_3d = (
         annotation_coordinate_type ==
         hd.ann.AnnotationCoordinateTypeValues.SCOORD3D
     )
     if use_3d:
-        coordinates_ref = transformer(coordinates_image)
-        polygon_ref = Polygon(coordinates_ref)
-
-    if store_boundary:
-        # Store the full polygon in graphic data
-        if use_3d:
-            coords = np.array(polygon_ref.exterior.coords)
-        else:
-            # 2D total pixel matrix coordinates
-            coords = np.array(polygon_image.exterior.coords)
-
-        # Remove the final point (polygon should not be closed)
-        coords = coords[:-1, :]
-        graphic_data = coords
-    else:
-        # Store the centroid of the polygon only, as a single point
-        if use_3d:
-            x, y = polygon_ref.centroid.xy
-            centroid = np.array([[x[0], y[0], 0.]])
-        else:
-            # 2D total pixel matrix coordinates
-            x, y = polygon_image.centroid.xy
-            centroid = np.array([[x[0], y[0]]])
-        graphic_data = centroid
+        graphic_data = transformer(graphic_data)
 
     return polygon_image, graphic_data.astype(np.float32), area_um2
 
@@ -104,15 +132,15 @@ def process_csv_row(
 def pool_init(
     transformer: hd.spatial.ImageToReferenceTransformer,
     area_per_pixel_um2: float,
-    store_boundary: bool = True,
+    graphic_type: hd.ann.GraphicTypeValues,
     annotation_coordinate_type: hd.ann.AnnotationCoordinateTypeValues = hd.ann.AnnotationCoordinateTypeValues.SCOORD,  # noqa: E501
 ):
     global transformer_global
     transformer_global = transformer
     global area_per_pixel_um2_global
     area_per_pixel_um2_global = area_per_pixel_um2
-    global store_boundary_global
-    store_boundary_global = store_boundary
+    global graphic_type_global
+    graphic_type_global = graphic_type
     global annotation_coordinate_type_global
     annotation_coordinate_type_global = annotation_coordinate_type
 
@@ -122,7 +150,7 @@ def pool_fun(csv_row: pd.Series):
         csv_row,
         transformer_global,
         area_per_pixel_um2_global,
-        store_boundary_global,
+        graphic_type_global,
         annotation_coordinate_type_global,
     )
 
@@ -132,7 +160,10 @@ def convert_annotations(
     source_images: Sequence[Dataset],
     *,
     include_segmentation: bool = False,
-    store_boundary: bool = True,
+    graphic_type: Union[
+        hd.ann.GraphicTypeValues,
+        str
+    ] = hd.ann.GraphicTypeValues.POLYGON,
     annotation_coordinate_type: Union[
         hd.ann.AnnotationCoordinateTypeValues,
         str
@@ -166,10 +197,9 @@ def convert_annotations(
         datasets, but the PixelData attributes are not required.
     include_segmentation: bool, optional
         Include the segmentation output.
-    store_boundary: bool, optional
-        Store the full nucleus boundary polygon in the Bulk Microscopy Bulk
-        Simple Annotations. If False, just the centroid is stored as a single
-        point.
+    graphic_type: Union[highdicom.ann.GraphicTypeValues, str], optional
+        Graphic type to use to store all nuclei. Note that all but 'POLYGON'
+        result in simplification and loss of information in the annotations.
     annotation_coordinate_type: Union[hd.ann.AnnotationCoordinateTypeValues, str], optional
         Store coordinates in the Bulk Microscopy Bulk Simple Annotations in the
         (3D) frame of reference (SCOORD3D), or the (2D) total pixel matrix
@@ -200,6 +230,7 @@ def convert_annotations(
     annotation_coordinate_type = hd.ann.AnnotationCoordinateTypeValues[
         annotation_coordinate_type
     ]
+    graphic_type = hd.ann.GraphicTypeValues[graphic_type]
 
     source_image_metadata = source_images[0]
     image_orientation = source_image_metadata.ImageOrientationSlide
@@ -221,11 +252,8 @@ def convert_annotations(
     )
     area_per_pixel_um2 = pixel_spacing[0] * pixel_spacing[1] * 1e6
 
-    graphic_type = (
-        hd.ann.GraphicTypeValues.POLYGON
-        if store_boundary
-        else hd.ann.GraphicTypeValues.POINT
-    )
+    if graphic_type == hd.ann.GraphicTypeValues.POLYLINE:
+        raise ValueError("Graphic type 'POLYLINE' not supported.")
 
     if workers > 0:
         # Use multiprcocessing
@@ -245,7 +273,7 @@ def convert_annotations(
             initargs=(
                 transformer,
                 area_per_pixel_um2,
-                store_boundary,
+                graphic_type,
                 annotation_coordinate_type,
             )
         ) as pool:
@@ -265,6 +293,7 @@ def convert_annotations(
     else:
         # Use the main thread
         graphic_data = []
+        polygons = []
         measurements = {
             (codes.SCT.Area, codes.UCUM.SquareMicrometer): [],
         }
@@ -272,18 +301,19 @@ def convert_annotations(
             df = pd.read_csv(f)
 
             for _, csv_row in df.iterrows():
-                contour_image, graphic_item, area = process_csv_row(
+                polygon, graphic_item, area = process_csv_row(
                     csv_row,
                     transformer,
                     area_per_pixel_um2,
-                    store_boundary,
+                    graphic_type,
                     annotation_coordinate_type,
                 )
 
-                if contour_image is None:
+                if polygon is None:
                     continue
 
                 graphic_data.append(graphic_item)
+                polygons.append(polygon)
 
                 measurements[
                     (codes.SCT.Area, codes.UCUM.SquareMicrometer)

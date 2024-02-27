@@ -247,4 +247,4 @@ def run_seg(fractional: bool):
 
 
 if __name__ == "__main__":
-    run_seg()
+    run()
