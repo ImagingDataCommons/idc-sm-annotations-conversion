@@ -88,6 +88,7 @@ def process_csv_row(
                 [minx, miny],
                 [maxx, miny],
                 [maxx, maxy],
+                [minx, maxy],
             ]
         )
     elif graphic_type == hd.ann.GraphicTypeValues.ELLIPSE:
@@ -97,7 +98,7 @@ def process_csv_row(
         # somewhat crude way of approximating the polygon with an ellipse.
         # Note that the resulting ellipse will not in general contain all the
         # points of the original polygon, some may be outside
-        rec = np.array(polygon_image.minimum_rotated_rectangle.coords)
+        rec = np.array(polygon_image.minimum_rotated_rectangle.exterior.coords)
 
         # Array of midpoints
         graphic_data = np.array(
