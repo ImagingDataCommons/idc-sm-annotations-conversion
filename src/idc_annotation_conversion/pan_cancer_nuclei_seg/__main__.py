@@ -295,7 +295,6 @@ def run(
     """
     # Use all collections if none specified
     collections = collections or COLLECTIONS
-    output_prefix = output_prefix or ""
 
     logging.basicConfig(level=logging.INFO)
 
