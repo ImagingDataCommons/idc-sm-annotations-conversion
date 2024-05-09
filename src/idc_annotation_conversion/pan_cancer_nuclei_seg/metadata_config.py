@@ -45,7 +45,7 @@ clinical_trial_ids_item.add(
         issuer_value,
     )
 )
-clinical_trial_ids_item.ClinicalTrialProtocolID = "doi:xx/xxx"
+clinical_trial_ids_item.ClinicalTrialProtocolID = "doi:10.5281/zenodo.11099005"
 other_trials_seq_element = pydicom.DataElement(
     other_trials_seq_tag,
     "SQ",
