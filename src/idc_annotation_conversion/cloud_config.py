@@ -4,7 +4,7 @@ GCP_PROJECT_ID = "idc-etl-processing"
 """The project ID to use for data access."""
 
 
-OUTPUT_GCP_PROJECT_ID = "idc-dev-etl"
+OUTPUT_GCP_PROJECT_ID = "idc-converted-data"
 """The project ID to use for creating output buckets."""
 
 
