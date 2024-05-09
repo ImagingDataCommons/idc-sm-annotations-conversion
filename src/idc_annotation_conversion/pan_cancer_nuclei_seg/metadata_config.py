@@ -1,4 +1,5 @@
 import highdicom as hd
+import pydicom
 from pydicom.sr.codedict import codes
 from pydicom.sr.coding import Code
 
@@ -26,3 +27,8 @@ algorithm_identification = hd.AlgorithmIdentificationSequence(
     source="https://doi.org/10.7937/TCIA.2019.4A4DKP9U",
     family=codes.cid7162.ArtificialIntelligence,
 )
+
+# DOI of the conversion page in Zenodo for other clinical trial protocol
+clinical_trial_ids_item = pydicom.Dataset()
+clinical_trial_ids_item.IssuerOfClinicalTrialProtocolID = "DOI"
+clinical_trial_ids_item.ClinicalTrialProtocolID = "PLACEHOLDER"

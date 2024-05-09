@@ -4,7 +4,6 @@ from os import PathLike
 import multiprocessing as mp
 from time import time
 from typing import Iterable, List, Optional, Sequence, Tuple, Union
-from click.decorators import GrpType
 
 import highdicom as hd
 import numpy as np
@@ -433,5 +432,14 @@ def convert_annotations(
             logging.info(f"Created DICOM Segmentation in {seg_time:.1f}s.")
     else:
         segmentations = None
+
+    annotations.OtherClinicalTialProtocolIDsSequence = [
+        metadata_config.clinical_trial_ids_item
+    ]
+    if segmentations is not None:
+        for seg in segmentations:
+            seg.OtherClinicalTialProtocolIDsSequence = [
+                metadata_config.clinical_trial_ids_item
+            ]
 
     return annotations, segmentations
