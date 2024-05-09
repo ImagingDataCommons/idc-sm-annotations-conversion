@@ -379,7 +379,7 @@ def run(
 
             selection_query = f"""
                 SELECT
-                    crdc_instance_uuid,
+                    gcs_url,
                     Cast(NumberOfFrames AS int) AS NumberOfFrames
                 FROM
                     bigquery-public-data.idc_current.dicom_all
@@ -399,10 +399,11 @@ def run(
                 continue
 
             source_images = []
-            for i, uuid in enumerate(selection_df.crdc_instance_uuid):
+            for i, url in enumerate(selection_df.gcs_url):
+                blob_name = "/".join(url.split("/")[3:])
                 wsi_dcm = cloud_io.read_dataset_from_blob(
                     bucket=public_bucket,
-                    blob_name=f"{uuid}.dcm",
+                    blob_name=blob_name,
                 )
                 source_images.append(wsi_dcm)
 
