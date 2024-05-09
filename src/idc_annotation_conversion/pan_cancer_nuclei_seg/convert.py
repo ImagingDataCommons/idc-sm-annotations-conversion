@@ -433,13 +433,9 @@ def convert_annotations(
     else:
         segmentations = None
 
-    annotations.OtherClinicalTialProtocolIDsSequence = [
-        metadata_config.clinical_trial_ids_item
-    ]
+    annotations.add(metadata_config.other_trials_seq_element)
     if segmentations is not None:
         for seg in segmentations:
-            seg.OtherClinicalTialProtocolIDsSequence = [
-                metadata_config.clinical_trial_ids_item
-            ]
+            seg.add(metadata_config.other_trials_seq_element)
 
     return annotations, segmentations

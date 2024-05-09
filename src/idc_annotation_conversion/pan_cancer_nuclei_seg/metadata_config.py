@@ -29,6 +29,25 @@ algorithm_identification = hd.AlgorithmIdentificationSequence(
 )
 
 # DOI of the conversion page in Zenodo for other clinical trial protocol
+# These are not yet in pydicom's data dict so we have to set the elements
+# manually
+# IssuerOfClinicalTrialProtocolID
+issuer_tag = pydicom.tag.Tag(0x0012, 0x0022)
+# OtherClinicalTrialProtocolIDsSequence
+other_trials_seq_tag = pydicom.tag.Tag(0x0012, 0x0023)
+
 clinical_trial_ids_item = pydicom.Dataset()
-clinical_trial_ids_item.IssuerOfClinicalTrialProtocolID = "DOI"
-clinical_trial_ids_item.ClinicalTrialProtocolID = "PLACEHOLDER"
+issuer_value = "DOI"
+clinical_trial_ids_item.add(
+    pydicom.DataElement(
+        issuer_tag,
+        "LO",
+        issuer_value,
+    )
+)
+clinical_trial_ids_item.ClinicalTrialProtocolID = "doi:xx/xxx"
+other_trials_seq_element = pydicom.DataElement(
+    other_trials_seq_tag,
+    "SQ",
+    [clinical_trial_ids_item],
+)
