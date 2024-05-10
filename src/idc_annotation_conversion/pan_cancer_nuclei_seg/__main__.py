@@ -15,6 +15,7 @@ from google.cloud import bigquery
 from google.cloud import storage
 import highdicom as hd
 from oauthlib.oauth2 import BackendApplicationClient
+import pandas as pd
 from requests_oauthlib import OAuth2Session
 
 from idc_annotation_conversion import cloud_io
@@ -339,6 +340,8 @@ def run(
                 "Unsuccessful connecting to requested DICOM archive."
             ) from e
 
+    errors = []
+
     # Loop over requested collections
     for collection in collections:
         prefix = f'cnn-nuclear-segmentations-2019/data-files/{collection}/'
@@ -376,141 +379,156 @@ def run(
 
             logging.info(f"Processing container: {container_id}")
 
-            selection_query = f"""
-                SELECT
-                    gcs_url,
-                    Cast(NumberOfFrames AS int) AS NumberOfFrames
-                FROM
-                    bigquery-public-data.idc_current.dicom_all
-                WHERE
-                    ContainerIdentifier='{container_id}'
-                ORDER BY
-                    NumberOfFrames DESC
-            """
-            selection_result = bq_client.query(selection_query)
-            selection_df = selection_result.result().to_dataframe()
+            try:
 
-            if len(selection_df) == 0:
-                # No image found, skip this for now
-                logging.error(
-                    f"Could not locate image for container {container_id}."
-                )
-                continue
+                selection_query = f"""
+                    SELECT
+                        gcs_url,
+                        Cast(NumberOfFrames AS int) AS NumberOfFrames
+                    FROM
+                        bigquery-public-data.idc_current.dicom_all
+                    WHERE
+                        ContainerIdentifier='{container_id}'
+                    ORDER BY
+                        NumberOfFrames DESC
+                """
+                selection_result = bq_client.query(selection_query)
+                selection_df = selection_result.result().to_dataframe()
 
-            source_images = []
-            for i, url in enumerate(selection_df.gcs_url):
-                blob_name = "/".join(url.split("/")[3:])
-                wsi_dcm = cloud_io.read_dataset_from_blob(
-                    bucket=public_bucket,
-                    blob_name=blob_name,
-                )
-                source_images.append(wsi_dcm)
-
-                # Store to disk
-                if output_dir is not None and store_wsi_dicom:
-                    wsi_path = (
-                        collection_dir / f"{container_id}_im_{i}.dcm"
+                if len(selection_df) == 0:
+                    # No image found, skip this for now
+                    logging.error(
+                        f"Could not locate image for container {container_id}."
                     )
-                    wsi_dcm.save_as(wsi_path)
+                    continue
 
-                # Store to DICOM archive
+                source_images = []
+                for i, url in enumerate(selection_df.gcs_url):
+                    blob_name = "/".join(url.split("/")[3:])
+                    wsi_dcm = cloud_io.read_dataset_from_blob(
+                        bucket=public_bucket,
+                        blob_name=blob_name,
+                    )
+                    source_images.append(wsi_dcm)
+
+                    # Store to disk
+                    if output_dir is not None and store_wsi_dicom:
+                        wsi_path = (
+                            collection_dir / f"{container_id}_im_{i}.dcm"
+                        )
+                        wsi_dcm.save_as(wsi_path)
+
+                    # Store to DICOM archive
+                    if dicom_archive is not None:
+                        web_client = get_dicom_web_client(
+                            url=dicom_archive,
+                            token_url=archive_token_url,
+                            client_id=archive_client_id,
+                            client_secret=archive_client_secret,
+                        )
+                        web_client.store_instances([wsi_dcm])
+
+                ann_dcm, seg_dcms = convert_annotations(
+                    annotation_csvs=iter_csvs(ann_blob),
+                    source_images=source_images,
+                    include_segmentation=with_segmentation,
+                    segmentation_type=segmentation_type,
+                    annotation_coordinate_type=annotation_coordinate_type,
+                    dimension_organization_type=dimension_organization_type,
+                    create_pyramid=create_pyramid,
+                    graphic_type=graphic_type,
+                    workers=workers,
+                )
+
+                # Store objects to bucket
+                if store_bucket:
+                    if output_bucket is None:
+                        data_str = (datetime.date.today())
+                        output_bucket = (
+                            "pan_cancer_nuclei_seg_annotation_"
+                            f"conversion_{data_str}"
+                        )
+                    output_bucket_obj = output_client.bucket(output_bucket)
+
+                    if not output_bucket_obj.exists():
+                        output_bucket_obj.create(
+                            location=cloud_config.GCP_DEFAULT_LOCATION
+                        )
+
+                    blob_root = (
+                        "" if output_prefix is None else f"{output_prefix}/"
+                    )
+                    ann_blob_name = (
+                        f"{blob_root}{collection}/{container_id}_ann.dcm"
+                    )
+
+                    logging.info(f"Uploading annotation to {ann_blob_name}.")
+                    cloud_io.write_dataset_to_blob(
+                        ann_dcm,
+                        output_bucket_obj,
+                        ann_blob_name,
+                    )
+                    if with_segmentation:
+                        for s, seg_dcm in enumerate(seg_dcms):
+                            seg_blob_name = (
+                                f"{blob_root}{collection}/{container_id}_seg_{s}.dcm"
+                            )
+                            logging.info(
+                                f"Uploading segmentation to {seg_blob_name}."
+                            )
+                            cloud_io.write_dataset_to_blob(
+                                seg_dcm,
+                                output_bucket_obj,
+                                seg_blob_name,
+                            )
+
+                # Store objects to filesystem
+                if output_dir is not None:
+                    ann_path = collection_dir / f"{container_id}_ann.dcm"
+
+                    logging.info(f"Writing annotation to {str(ann_path)}.")
+                    ann_dcm.save_as(ann_path)
+
+                    if with_segmentation:
+                        for s, seg_dcm in enumerate(seg_dcms):
+                            seg_path = collection_dir / f"{container_id}_seg_{s}.dcm"
+                            logging.info(f"Writing segmentation to {str(seg_path)}.")
+                            seg_dcm.save_as(seg_path)
+
+                # Store objects to DICOM archive
                 if dicom_archive is not None:
+                    # Recreate client each time to deal with token expiration
                     web_client = get_dicom_web_client(
                         url=dicom_archive,
                         token_url=archive_token_url,
                         client_id=archive_client_id,
                         client_secret=archive_client_secret,
                     )
-                    web_client.store_instances([wsi_dcm])
 
-            ann_dcm, seg_dcms = convert_annotations(
-                annotation_csvs=iter_csvs(ann_blob),
-                source_images=source_images,
-                include_segmentation=with_segmentation,
-                segmentation_type=segmentation_type,
-                annotation_coordinate_type=annotation_coordinate_type,
-                dimension_organization_type=dimension_organization_type,
-                create_pyramid=create_pyramid,
-                graphic_type=graphic_type,
-                workers=workers,
-            )
+                    logging.info(f"Writing annotation to {dicom_archive}.")
+                    web_client.store_instances([ann_dcm])
 
-            # Store objects to bucket
-            if store_bucket:
-                if output_bucket is None:
-                    data_str = (datetime.date.today())
-                    output_bucket = (
-                        "pan_cancer_nuclei_seg_annotation_"
-                        f"conversion_{data_str}"
-                    )
-                output_bucket_obj = output_client.bucket(output_bucket)
+                    if with_segmentation:
+                        logging.info(f"Writing segmentation(s) to {dicom_archive}.")
+                        for seg_dcm in seg_dcms:
+                            web_client.store_instances([seg_dcm])
 
-                if not output_bucket_obj.exists():
-                    output_bucket_obj.create(
-                        location=cloud_config.GCP_DEFAULT_LOCATION
-                    )
+                image_stop_time = time()
+                time_for_image = image_stop_time - image_start_time
+                logging.info(f"Processed {container_id} in {time_for_image:.2f}s")
 
-                blob_root = (
-                    "" if output_prefix is None else f"{output_prefix}/"
+            except Exception as e:
+                logging.error(f"Error {str(e)}")
+                errors.append(
+                    {
+                        "collection": collection,
+                        "container_id": container_id,
+                        "error_message": str(e),
+                        "datetime": str(datetime.datetime.now()),
+                    }
                 )
-                ann_blob_name = (
-                    f"{blob_root}{collection}/{container_id}_ann.dcm"
-                )
-
-                logging.info(f"Uploading annotation to {ann_blob_name}.")
-                cloud_io.write_dataset_to_blob(
-                    ann_dcm,
-                    output_bucket_obj,
-                    ann_blob_name,
-                )
-                if with_segmentation:
-                    for s, seg_dcm in enumerate(seg_dcms):
-                        seg_blob_name = (
-                            f"{blob_root}{collection}/{container_id}_seg_{s}.dcm"
-                        )
-                        logging.info(
-                            f"Uploading segmentation to {seg_blob_name}."
-                        )
-                        cloud_io.write_dataset_to_blob(
-                            seg_dcm,
-                            output_bucket_obj,
-                            seg_blob_name,
-                        )
-
-            # Store objects to filesystem
-            if output_dir is not None:
-                ann_path = collection_dir / f"{container_id}_ann.dcm"
-
-                logging.info(f"Writing annotation to {str(ann_path)}.")
-                ann_dcm.save_as(ann_path)
-
-                if with_segmentation:
-                    for s, seg_dcm in enumerate(seg_dcms):
-                        seg_path = collection_dir / f"{container_id}_seg_{s}.dcm"
-                        logging.info(f"Writing segmentation to {str(seg_path)}.")
-                        seg_dcm.save_as(seg_path)
-
-            # Store objects to DICOM archive
-            if dicom_archive is not None:
-                # Recreate client each time to deal with token expiration
-                web_client = get_dicom_web_client(
-                    url=dicom_archive,
-                    token_url=archive_token_url,
-                    client_id=archive_client_id,
-                    client_secret=archive_client_secret,
-                )
-
-                logging.info(f"Writing annotation to {dicom_archive}.")
-                web_client.store_instances([ann_dcm])
-
-                if with_segmentation:
-                    logging.info(f"Writing segmentation(s) to {dicom_archive}.")
-                    for seg_dcm in seg_dcms:
-                        web_client.store_instances([seg_dcm])
-
-            image_stop_time = time()
-            time_for_image = image_stop_time - image_start_time
-            logging.info(f"Processed {container_id} in {time_for_image:.2f}s")
+                errors_df = pd.DataFrame(errors)
+                errors_df.to_csv("error_log.csv")
 
 
 if __name__ == "__main__":
