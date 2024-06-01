@@ -7,7 +7,7 @@ from pathlib import Path
 import os
 import tarfile
 from time import time
-from typing import List, Generator, Optional
+from typing import Any, Generator, Optional
 
 import click
 from dicomweb_client import DICOMwebClient
@@ -16,11 +16,14 @@ from google.cloud import storage
 import highdicom as hd
 from oauthlib.oauth2 import BackendApplicationClient
 import pandas as pd
-import pydicom
 from requests_oauthlib import OAuth2Session
 
 from idc_annotation_conversion import cloud_io
-from idc_annotation_conversion.pan_cancer_nuclei_seg.convert import convert_annotations
+from idc_annotation_conversion.pan_cancer_nuclei_seg.convert import (
+    get_graphic_data,
+    create_bulk_annotations,
+    create_segmentations,
+)
 from idc_annotation_conversion import cloud_config
 from idc_annotation_conversion.mp_utils import Pipeline
 
@@ -209,8 +212,8 @@ class FileDownloader:
     def __call__(
         self,
         csv_blob: storage.Blob,
-    ) -> tuple[str, str, bytes, list[pydicom.Dataset]]:
-        """A generator that pulls all necessary files and yields them.
+    ) -> dict[str, Any]:
+        """Pull all necessary files.
 
         Parameters
         ----------
@@ -219,14 +222,18 @@ class FileDownloader:
 
         Returns
         -------
-        collection: str
-            Name of the collection to which this image belongs.
-        container_id: str
-            Container ID for this slide.
-        csv_bytes: bytes
-            Raw bytes of the .tar.gz file containing the CSV annotations.
-        source_images: list[pydicom.Dataset]
-            List of source images for these annotations.
+        data: dict[str, Any]
+            Output data packed into a dict. This will contain the same keys as
+            the input dictionary, plus the following additional keys:
+
+            - collection: str
+                Collection name for the case.
+            - container_id: str
+                Container ID for the case.
+            - csv_bytes: bytes
+                Raw bytes of the downloaded annotation .tar.gz file.
+            - source_images: list[pydicom.Dataset]
+                Source images for this case.
 
         """
         start_time = time()
@@ -287,6 +294,11 @@ class FileDownloader:
                     )
                     web_client.store_instances([wsi_dcm])
 
+            # The pixels are no longer needed, and they take loads of memory.
+            # So just delete them
+            for wsi_dcm in source_images:
+                del wsi_dcm.PixelData
+
         except Exception as e:
             logging.error(f"Error {str(e)}")
             self._errors.append(
@@ -305,20 +317,21 @@ class FileDownloader:
         duration = stop_time - start_time
         logging.info(f"Pulled images for {container_id} in {duration:.2f}s")
 
-        return collection, container_id, csv_bytes, source_images
+        return dict(
+            collection=collection,
+            container_id=container_id,
+            csv_bytes=csv_bytes,
+            source_images=source_images,
+        )
 
 
-class AnnotationConverter:
+class CSVParser:
 
-    """Class that converts annotations from CSV to DICOM."""
+    """Class that parses CSV annotations to graphic data."""
 
     def __init__(
         self,
-        with_segmentation: bool,
-        segmentation_type: str,
         annotation_coordinate_type: str,
-        dimension_organization_type: str,
-        create_pyramid: bool,
         graphic_type: str,
         workers: int,
     ):
@@ -326,8 +339,6 @@ class AnnotationConverter:
 
         Parameters
         ----------
-        with_segmentation: bool, optional
-            Include the segmentation output.
         graphic_type: str
             Graphic type to use to store all nuclei. Note that all but
             'POLYGON' result in simplification and loss of information in the
@@ -336,43 +347,23 @@ class AnnotationConverter:
             Store coordinates in the Bulk Microscopy Bulk Simple Annotations in
             the (3D) frame of reference (SCOORD3D), or the (2D) total pixel
             matrix (SCOORD, default).
-        segmentation_type: str
-            Segmentation type (BINARY or FRACTIONAL) for the Segmentation Image
-            (if any).
         workers: int
             Number of subprocess workers to spawn. If 0, all computation will
             use the main thread.
-        dimension_organization_type: str
-            Dimension organization type of the output segmentations.
-        create_pyramid: bool
-            Whether to create a full pyramid of segmentations (rather than a
-            single segmentation at the highest resolution).
 
         """
-        self._with_segmentation = with_segmentation
-        self._segmentation_type = segmentation_type
         self._annotation_coordinate_type = annotation_coordinate_type
-        self._dimension_organization_type = dimension_organization_type
-        self._create_pyramid = create_pyramid
         self._graphic_type = graphic_type
         self._workers = workers
         self._errors = []
 
-    def __call__(
-        self,
-        data: tuple[str, str, bytes, list[pydicom.Dataset]],
-    ) -> tuple[
-        str,
-        str,
-        hd.ann.MicroscopyBulkSimpleAnnotations,
-        Optional[list[hd.seg.Segmentation]]
-    ]:
-        """Process a single case to create DICOM annotations.
+    def __call__(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Parse CSV to graphic data.
 
         Parameters
         ----------
-        data: tuple[str, str, bytes, list[pydicom.Dataset]]
-            Input data packed into a tuple:
+        data: dict[str, Any]
+            Input data packed into a dict, including at least:
 
             - collection: str
                 Collection name for the case.
@@ -385,36 +376,140 @@ class AnnotationConverter:
 
         Returns
         -------
-        collection: str
-            Name of the collection.
-        container_id: str
-            Container ID for this case.
-        annotation: hd.ann.MicroscopyBulkSimpleAnnotations:
-            DICOM bulk microscopy annotation encoding the original annotations
-            in vector format.
-        segmentation: Optional[List[hd.seg.Segmentation]]:
-            DICOM segmentation image(s) encoding the original annotations in
-            raster format, if requested. None otherwise.
+        data: dict[str, Any]
+            Output data packed into a dict. This will contain the same keys as
+            the input dictionary, plus the following additional keys:
+
+            - polygons: list[shapely.geometry.polygon.Polygon]
+                List of polygons. Note that this is always the list of full
+                original, 2D polygons regardless of the requested graphic type
+                and annotation coordinate type.
+            - graphic_data: list[np.ndarray]
+                List of graphic data as numpy arrays in the format required for
+                the MicroscopyBulkSimpleAnnotations object. These are correctly
+                formatted for the requested graphic type and annotation
+                coordinate type.
+            - areas: list[float]
+                Areas for each of the polygons, in square micrometers. Does not
+                depend on requested graphic type or coordinate type.
+
+        """
+        start_time = time()
+        container_id = data["container_id"]
+        logging.info(f"Parsing CSV for container: {container_id}")
+        try:
+            polygons, graphic_data, areas = get_graphic_data(
+                annotation_csvs=iter_csvs(data["csv_bytes"]),
+                source_image_metadata=data["source_images"][0],
+                graphic_type=self._graphic_type,
+                annotation_coordinate_type=self._annotation_coordinate_type,
+                workers=self._workers,
+            )
+        except Exception as e:
+            logging.error(f"Error {str(e)}")
+            self._errors.append(
+                {
+                    "collection": data["collection"],
+                    "container_id": data["container_id"],
+                    "error_message": str(e),
+                    "datetime": str(datetime.datetime.now()),
+                }
+            )
+            errors_df = pd.DataFrame(self._errors)
+            errors_df.to_csv("conversion_error_log.csv")
+            return None
+
+        stop_time = time()
+        duration = stop_time - start_time
+        logging.info(
+            f"Processed CSV for container {container_id} in {duration:.2f}s"
+        )
+        del data["csv_bytes"]  # save some memory
+        data["polygons"] = polygons
+        data["graphic_data"] = graphic_data
+        data["areas"] = areas
+        return data
+
+
+class AnnotationCreator:
+
+    """Class that creates bulk annotations DICOM objects."""
+
+    def __init__(
+        self,
+        graphic_type: str,
+        annotation_coordinate_type: str,
+    ):
+        """
+
+        Parameters
+        ----------
+        graphic_type: str
+            Graphic type to use to store all nuclei. Note that all but
+            'POLYGON' result in simplification and loss of information in the
+            annotations.
+        annotation_coordinate_type: str
+            Store coordinates in the Bulk Microscopy Bulk Simple Annotations in
+            the (3D) frame of reference (SCOORD3D), or the (2D) total pixel
+            matrix (SCOORD, default).
+
+        """
+        self._annotation_coordinate_type = annotation_coordinate_type
+        self._graphic_type = graphic_type
+        self._errors = []
+
+    def __call__(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Parse CSV to graphic data.
+
+        Parameters
+        ----------
+        data: dict[str, Any]
+            Input data packed into a dict, including at least:
+
+            - collection: str
+                Collection name for the case.
+            - container_id: str
+                Container ID for the case.
+            - graphic_data: list[np.ndarray]
+                List of graphic data as numpy arrays in the format required for
+                the MicroscopyBulkSimpleAnnotations object. These are correctly
+                formatted for the requested graphic type and annotation
+                coordinate type.
+            - source_images: list[pydicom.Dataset]
+                Source images for this case.
+            - areas: list[float]
+                Areas for each of the polygons, in square micrometers. Does not
+                depend on requested graphic type or coordinate type.
+
+        Returns
+        -------
+        data: dict[str, Any]
+            Output data packed into a dict. This will contain the same keys as
+            the input dictionary, plus the following additional keys:
+
+            - ann_dcm: hd.ann.MicroscopyBulkSimpleAnnotations:
+                DICOM bulk microscopy annotation encoding the original
+                annotations in vector format.
 
         """
         # Unpack inputs
-        collection, container_id, csv_bytes, source_images = data
+        collection = data["collection"]
+        container_id = data["container_id"]
+        source_images = data["source_images"]
+        graphic_data = data["graphic_data"]
+        areas = data["areas"]
 
-        image_start_time = time()
+        start_time = time()
 
-        logging.info(f"Processing container: {container_id}")
+        logging.info(f"Creating annotation for container: {container_id}")
 
         try:
-            ann_dcm, seg_dcms = convert_annotations(
-                annotation_csvs=iter_csvs(csv_bytes),
-                source_images=source_images,
-                include_segmentation=self._with_segmentation,
-                segmentation_type=self._segmentation_type,
+            ann_dcm = create_bulk_annotations(
+                source_image_metadata=source_images[0],
+                graphic_data=graphic_data,
+                areas=areas,
                 annotation_coordinate_type=self._annotation_coordinate_type,
-                dimension_organization_type=self._dimension_organization_type,
-                create_pyramid=self._create_pyramid,
                 graphic_type=self._graphic_type,
-                workers=self._workers,
             )
         except Exception as e:
             logging.error(f"Error {str(e)}")
@@ -427,14 +522,133 @@ class AnnotationConverter:
                 }
             )
             errors_df = pd.DataFrame(self._errors)
-            errors_df.to_csv("conversion_error_log.csv")
+            errors_df.to_csv("annotation_creator_error_log.csv")
+            return None
+
+        stop_time = time()
+        duration = stop_time - start_time
+        logging.info(
+            f"Created annotation for {container_id} in {duration:.2f}s"
+        )
+
+        data["ann_dcm"] = ann_dcm
+
+        # Save some memory
+        del data["graphic_data"]
+        del data["areas"]
+
+        return data
+
+
+class SegmentationCreator:
+
+    """Class that creates DICOM segmentations from graphic data."""
+
+    def __init__(
+        self,
+        segmentation_type: str,
+        dimension_organization_type: str,
+        create_pyramid: bool,
+    ):
+        """
+
+        Parameters
+        ----------
+        segmentation_type: str
+            Segmentation type (BINARY or FRACTIONAL) for the Segmentation Image
+            (if any).
+        dimension_organization_type: str
+            Dimension organization type of the output segmentations.
+        create_pyramid: bool
+            Whether to create a full pyramid of segmentations (rather than a
+            single segmentation at the highest resolution).
+
+        """
+        self._segmentation_type = segmentation_type
+        self._dimension_organization_type = dimension_organization_type
+        self._create_pyramid = create_pyramid
+        self._errors = []
+
+    def __call__(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Parse CSV to graphic data.
+
+        Parameters
+        ----------
+        data: dict[str, Any]
+            Input data packed into a dict, including at least:
+
+            - collection: str
+                Collection name for the case.
+            - container_id: str
+                Container ID for the case.
+            - graphic_data: list[np.ndarray]
+                List of graphic data as numpy arrays in the format required for
+                the MicroscopyBulkSimpleAnnotations object. These are correctly
+                formatted for the requested graphic type and annotation
+                coordinate type.
+            - source_images: list[pydicom.Dataset]
+                Source images for this case.
+            - areas: list[float]
+                Areas for each of the polygons, in square micrometers. Does not
+                depend on requested graphic type or coordinate type.
+
+        Returns
+        -------
+        data: dict[str, Any]
+            Output data packed into a dict. This will contain the same keys as
+            the input dictionary, plus the following additional keys:
+
+            - segmentations: List[hd.seg.Segmentation]
+                DICOM segmentation image(s) encoding the original annotations in raster
+                format.
+
+        """
+        # Unpack inputs
+        collection = data["collection"]
+        container_id = data["container_id"]
+        source_images = data["source_images"]
+        polygons = data["polygons"]
+
+        image_start_time = time()
+
+        logging.info(f"Creating segmentation for: {container_id}")
+
+        try:
+            seg_dcms = create_segmentations(
+                polygons=polygons,
+                source_images=source_images,
+                dimension_organization_type=self._dimension_organization_type,
+                segmentation_type=self._segmentation_type,
+                create_pyramid=self._create_pyramid,
+            )
+        except Exception as e:
+            logging.error(f"Error {str(e)}")
+            self._errors.append(
+                {
+                    "collection": collection,
+                    "container_id": container_id,
+                    "error_message": str(e),
+                    "datetime": str(datetime.datetime.now()),
+                }
+            )
+            errors_df = pd.DataFrame(self._errors)
+            errors_df.to_csv("segmentation_creator_error_log.csv")
             return None
 
         image_stop_time = time()
         duration = image_stop_time - image_start_time
-        logging.info(f"Processed container {container_id} in {duration:.2f}s")
+        logging.info(
+            f"Created segmentations for container {container_id} in "
+            f"{duration:.2f}s"
+        )
 
-        return collection, container_id, ann_dcm, seg_dcms
+        del data["polygons"]
+        del data["source_images"]
+        for seg in seg_dcms:
+            del seg._db_man  # Prevents pickling...
+        data["seg_dcms"] = seg_dcms
+
+        return data
 
 
 class FileUploader:
@@ -478,19 +692,14 @@ class FileUploader:
 
     def __call__(
         self,
-        data: tuple[
-            str,
-            str,
-            hd.ann.MicroscopyBulkSimpleAnnotations,
-            Optional[list[hd.seg.Segmentation]],
-        ],
+        data: dict[str, Any],
     ) -> None:
         """Upload files.
 
         Parameters
         ----------
-        data: tuple[str, str, highdicom.ann.MicroscopyBulkSimpleAnnotations, Optional[list[highdicom.seg.Segmentation]]
-            Input data packed into a tuple:
+        data: dict[str, Any]
+            Input data packed into a dictionary, containing at least:
 
             - collection: str
                 Collection name for the case.
@@ -501,11 +710,14 @@ class FileUploader:
             - seg_dcm: Optional[list[highdicom.seg.Segmentation]]
                 Converted segmentations, if required.
 
-        """  # noqa: E501
+        """
         image_start_time = time()
 
         # Unpack inputs
-        collection, container_id, ann_dcm, seg_dcms = data
+        collection = data["collection"]
+        container_id = data["container_id"]
+        ann_dcm = data["ann_dcm"]
+        seg_dcms = data.get("seg_dcms")
 
         logging.info(f"Uploading annotations for {container_id}")
 
@@ -774,7 +986,7 @@ class FileUploader:
     help="Use a separate process to pull images.",
 )
 def run(
-    collections: Optional[List[str]],
+    collections: Optional[list[str]],
     number: Optional[int],
     output_dir: Optional[Path],
     output_bucket: str,
@@ -929,6 +1141,7 @@ def run(
 
     logging.info(f"Found {len(to_process)} CSVs to process")
 
+    operations = []
     pull_kwargs = dict(
         output_dir=output_dir if store_wsi_dicom else None,
         dicom_archive=dicom_archive,
@@ -936,15 +1149,27 @@ def run(
         archive_client_id=archive_client_id,
         archive_client_secret=archive_client_secret,
     )
-    convert_kwargs = dict(
-        with_segmentation=with_segmentation,
-        segmentation_type=segmentation_type,
+    operations.append((FileDownloader, [], pull_kwargs))
+    parser_kwargs = dict(
         annotation_coordinate_type=annotation_coordinate_type,
-        dimension_organization_type=dimension_organization_type,
-        create_pyramid=create_pyramid,
         graphic_type=graphic_type,
         workers=workers,
     )
+    operations.append((CSVParser, [], parser_kwargs))
+    annotation_creator_kwargs = dict(
+        annotation_coordinate_type=annotation_coordinate_type,
+        graphic_type=graphic_type,
+    )
+    operations.append((AnnotationCreator, [], annotation_creator_kwargs))
+    if with_segmentation:
+        segmentation_creator_kwargs = dict(
+            segmentation_type=segmentation_type,
+            dimension_organization_type=dimension_organization_type,
+            create_pyramid=create_pyramid,
+        )
+        operations.append(
+            (SegmentationCreator, [], segmentation_creator_kwargs)
+        )
     upload_kwargs = dict(
         output_dir=output_dir if store_wsi_dicom else None,
         output_bucket_obj=output_bucket_obj if store_bucket else None,
@@ -953,12 +1178,9 @@ def run(
         archive_client_id=archive_client_id,
         archive_client_secret=archive_client_secret,
     )
+    operations.append((FileUploader, [], upload_kwargs))
     pipeline = Pipeline(
-        [
-            (FileDownloader, [], pull_kwargs),
-            (AnnotationConverter, [], convert_kwargs),
-            (FileUploader, [], upload_kwargs),
-        ],
+        operations,
         same_process=not pull_process,
     )
     pipeline(to_process)
