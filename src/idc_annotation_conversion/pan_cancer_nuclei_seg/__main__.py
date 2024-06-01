@@ -7,7 +7,7 @@ from pathlib import Path
 import os
 import tarfile
 from time import time
-from typing import List, Generator, Optional
+from typing import List, Generator, Optional, Tuple
 
 import click
 from dicomweb_client import DICOMwebClient
@@ -43,6 +43,51 @@ COLLECTIONS = [
     "ucec_polygon",
     "uvm_polygon",
 ]
+
+
+def get_ann_blob_name(
+    output_blob_root: str,
+    collection: str,
+    container_id: str
+) -> str:
+    """Get the name of the blob where an annotation should be stored."""
+    return f"{output_blob_root}{collection}/{container_id}_ann.dcm"
+
+
+def get_seg_blob_name(
+    output_blob_root: str,
+    collection: str,
+    container_id: str,
+    pyramid_level: int,
+) -> str:
+    """Get the name of the blob where a segmentation should be stored."""
+    return (
+        f"{output_blob_root}{collection}/"
+        f"{container_id}_seg_{pyramid_level}.dcm"
+    )
+
+
+def split_csv_blob_name(csv_blob: storage.Blob) -> Tuple[str, str]:
+    """Get collection name and container name from blob name."""
+    collection = csv_blob.name.split("/")[-3]
+    collection_prefix = f'{ANNOTATION_PREFIX}{collection}/'
+
+    # Massage the blob name to derive container information
+    # eg TCGA-05-4244-01Z-00-DX1.d4ff32cd-38cf-40ea-8213-45c2b100ac01
+    filename = (
+        csv_blob.name
+        .replace(collection_prefix, '')
+        .split('/')[0]
+        .replace('.svs.tar.gz', '')
+    )
+
+    # eg TCGA-05-4244-01Z-00-DX1, d4ff32cd-38cf-40ea-8213-45c2b100ac01
+    if '.' in filename:
+        container_id, _ = filename.split('.')
+    else:
+        container_id = filename
+
+    return collection, container_id
 
 
 def iter_csvs(ann_blob: storage.Blob) -> Generator[BufferedReader, None, None]:
@@ -124,9 +169,9 @@ def get_dicom_web_client(
 )
 @click.option(
     "-l",
-    "--annotation-blob",
+    "--csv-blob",
     help=(
-        "Specify a single annotation blob to process, using its path within "
+        "Specify a single CSV blob to process, using its path within "
         "the bucket."
     ),
 )
@@ -153,6 +198,13 @@ def get_dicom_web_client(
     "-k/-K",
     help="Whether to store outputs to the bucket in this run.",
     default=True,
+    show_default=True,
+)
+@click.option(
+    "--keep-existing/--overwrite-existing",
+    "-m/-M",
+    help="Only process a case if the output does not exist in the bucket.",
+    default=False,
     show_default=True,
 )
 @click.option(
@@ -282,11 +334,12 @@ def run(
     segmentation_type: str,
     dimension_organization_type: str,
     create_pyramid: bool,
-    annotation_blob: Optional[str] = None,
+    csv_blob: Optional[str] = None,
     dicom_archive: Optional[str] = None,
     archive_token_url: Optional[str] = None,
     archive_client_id: Optional[str] = None,
     archive_client_secret: Optional[str] = None,
+    keep_existing: bool = False,
     workers: int = 0,
 ):
     """Convert TCGA cell nuclei annotations to DICOM format.
@@ -316,11 +369,29 @@ def run(
     # Setup project and authenticate
     os.environ["GCP_PROJECT_ID"] = cloud_config.GCP_PROJECT_ID
 
+    if keep_existing and not store_bucket:
+        raise ValueError("keep_existing requires store_bucket")
+
     # Access bucket containing annotations
     storage_client = storage.Client(project=cloud_config.GCP_PROJECT_ID)
     output_client = storage.Client(project=cloud_config.OUTPUT_GCP_PROJECT_ID)
     ann_bucket = storage_client.bucket(ANNOTATION_BUCKET)
     public_bucket = storage_client.bucket(cloud_config.DICOM_IMAGES_BUCKET)
+    output_blob_root = (
+        "" if output_prefix is None else f"{output_prefix}/"
+    )
+    if store_bucket:
+        if output_bucket is None:
+            data_str = (datetime.date.today())
+            output_bucket = (
+                "pan_cancer_nuclei_seg_annotation_conversion_{data_str}"
+            )
+        output_bucket_obj = output_client.bucket(output_bucket)
+
+        if not output_bucket_obj.exists():
+            output_bucket_obj.create(
+                location=cloud_config.GCP_DEFAULT_LOCATION
+            )
 
     # Setup bigquery client
     bq_client = bigquery.Client(cloud_config.GCP_PROJECT_ID)
@@ -352,54 +423,73 @@ def run(
 
     errors = []
 
-    if annotation_blob is not None:
-        ann_blob = ann_bucket.get_blob(annotation_blob)
-        if not ann_blob.exists():
-            raise RuntimeError(f"No such blob found: {ann_blob.name}")
-        ann_blobs = [ann_blob]
+    logging.info("Listing CSVs")
+
+    if csv_blob is not None:
+        csv_blob_obj = ann_bucket.get_blob(csv_blob)
+        if not csv_blob_obj.exists():
+            raise RuntimeError(f"No such blob found: {csv_blob}")
+        to_process = [csv_blob_obj]
     else:
-        ann_blobs = []
+        to_process = []
 
         # Loop over requested collections
         for collection in collections:
             collection_prefix = f'{ANNOTATION_PREFIX}{collection}/'
 
-            ann_blobs.extend(
-                [
-                    b for b in ann_bucket.list_blobs(prefix=collection_prefix)
-                    if b.name.endswith('.svs.tar.gz')
-                ]
-            )
+            collection_blobs = [
+                b for b in ann_bucket.list_blobs(prefix=collection_prefix)
+                if b.name.endswith('.svs.tar.gz')
+            ]
+
+            for blob in collection_blobs:
+
+                collection, container_id = split_csv_blob_name(blob)
+
+                # Check whether the output blobs already exist, and skip if
+                # they do
+                if keep_existing:
+                    ann_blob_name = get_ann_blob_name(
+                        output_blob_root=output_blob_root,
+                        collection=collection,
+                        container_id=container_id,
+                    )
+                    ann_output_blob = output_bucket_obj.get_blob(ann_blob_name)
+                    if with_segmentation:
+                        seg_blob_name = get_seg_blob_name(
+                            output_blob_root=output_blob_root,
+                            collection=collection,
+                            container_id=container_id,
+                            pyramid_level=0,
+                        )
+                        seg_output_blob = output_bucket_obj.get_blob(
+                            seg_blob_name
+                        )
+                        if (
+                            ann_output_blob is not None and
+                            seg_output_blob is not None
+                        ):
+                            continue
+                    else:
+                        if ann_output_blob is not None:
+                            continue
+
+                to_process.append(blob)
 
         if number is not None:
-            ann_blobs = ann_blobs[:number]
+            to_process = to_process[:number]
+
+    logging.info(f"Found {len(to_process)} CSVs to process")
 
     # Loop over all annotations
-    for ann_blob in ann_blobs:
+    for csv_blob in to_process:
+        collection, container_id = split_csv_blob_name(csv_blob)
 
         image_start_time = time()
-
-        collection = ann_blob.name.split("/")[-3]
-        collection_prefix = f'{ANNOTATION_PREFIX}{collection}/'
 
         if output_dir is not None:
             collection_dir = output_dir / collection
             collection_dir.mkdir(exist_ok=True)
-
-        # Massage the blob name to derive container information
-        # eg TCGA-05-4244-01Z-00-DX1.d4ff32cd-38cf-40ea-8213-45c2b100ac01
-        filename = (
-            ann_blob.name
-            .replace(collection_prefix, '')
-            .split('/')[0]
-            .replace('.svs.tar.gz', '')
-        )
-
-        # eg TCGA-05-4244-01Z-00-DX1, d4ff32cd-38cf-40ea-8213-45c2b100ac01
-        if '.' in filename:
-            container_id, _ = filename.split('.')
-        else:
-            container_id = filename
 
         logging.info(f"Processing container: {container_id}")
 
@@ -453,7 +543,7 @@ def run(
                     web_client.store_instances([wsi_dcm])
 
             ann_dcm, seg_dcms = convert_annotations(
-                annotation_csvs=iter_csvs(ann_blob),
+                annotation_csvs=iter_csvs(csv_blob),
                 source_images=source_images,
                 include_segmentation=with_segmentation,
                 segmentation_type=segmentation_type,
@@ -466,24 +556,10 @@ def run(
 
             # Store objects to bucket
             if store_bucket:
-                if output_bucket is None:
-                    data_str = (datetime.date.today())
-                    output_bucket = (
-                        "pan_cancer_nuclei_seg_annotation_"
-                        f"conversion_{data_str}"
-                    )
-                output_bucket_obj = output_client.bucket(output_bucket)
-
-                if not output_bucket_obj.exists():
-                    output_bucket_obj.create(
-                        location=cloud_config.GCP_DEFAULT_LOCATION
-                    )
-
-                blob_root = (
-                    "" if output_prefix is None else f"{output_prefix}/"
-                )
-                ann_blob_name = (
-                    f"{blob_root}{collection}/{container_id}_ann.dcm"
+                ann_blob_name = get_ann_blob_name(
+                    output_blob_root=output_blob_root,
+                    collection=collection,
+                    container_id=container_id,
                 )
 
                 logging.info(f"Uploading annotation to {ann_blob_name}.")
@@ -494,8 +570,11 @@ def run(
                 )
                 if with_segmentation:
                     for s, seg_dcm in enumerate(seg_dcms):
-                        seg_blob_name = (
-                            f"{blob_root}{collection}/{container_id}_seg_{s}.dcm"
+                        seg_blob_name = get_seg_blob_name(
+                            output_blob_root=output_blob_root,
+                            collection=collection,
+                            container_id=container_id,
+                            pyramid_level=s,
                         )
                         logging.info(
                             f"Uploading segmentation to {seg_blob_name}."

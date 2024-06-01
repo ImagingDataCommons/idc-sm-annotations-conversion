@@ -70,11 +70,22 @@ def process_csv_row(
         return None, None, None
     polygon_image = Polygon(full_coordinates_image)
 
+    # Remove the final point (require not to be closed but Polygon adds
+    # this)
+    coords = np.array(polygon_image.exterior.coords)[:-1, :]
+
+    # Remove the last point if it is the same as the first (in this case the
+    # duplicate comes from the original CSV file)
+    if (coords[0, :] == coords[-1, :]).all():
+        coords = coords[:-1, :]
+        # There seem to be a small number of cases with only three points, with
+        # the first and last duplicated. Just remove these.
+        if len(coords) < 3:
+            return None, None, None
+
     # Simplify the coordinates as required
     if graphic_type == hd.ann.GraphicTypeValues.POLYGON:
-        coords = np.array(polygon_image.exterior.coords)
-        # Remove the final point (polygon should not be closed)
-        graphic_data = coords[:-1, :]
+        graphic_data = coords
     elif graphic_type == hd.ann.GraphicTypeValues.POINT:
         x, y = polygon_image.centroid.xy
         graphic_data = np.array([[x[0], y[0]]])
