@@ -656,6 +656,7 @@ class FileUploader:
     def __init__(
         self,
         output_bucket_obj: Optional[storage.Bucket],
+        output_blob_root: str,
         output_dir: Optional[Path],
         dicom_archive: Optional[str] = None,
         archive_token_url: Optional[str] = None,
@@ -683,6 +684,7 @@ class FileUploader:
 
         """
         self._output_bucket_obj = output_bucket_obj
+        self._output_blob_root = output_blob_root
         self._output_dir = output_dir
         self._dicom_archive = dicom_archive
         self._archive_token_url = archive_token_url
@@ -1173,6 +1175,7 @@ def run(
     upload_kwargs = dict(
         output_dir=output_dir if store_wsi_dicom else None,
         output_bucket_obj=output_bucket_obj if store_bucket else None,
+        output_blob_root=output_blob_root,
         dicom_archive=dicom_archive,
         archive_token_url=archive_token_url,
         archive_client_id=archive_client_id,
