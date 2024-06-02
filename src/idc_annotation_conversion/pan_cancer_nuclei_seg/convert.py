@@ -65,9 +65,9 @@ def process_csv_row(
     area_pix = float(csv_row.AreaInPixels)
     area_um2 = area_pix * area_per_pixel_um2
     n = len(points) // 2
-    full_coordinates_image = points.reshape(n, 2)
-    if full_coordinates_image.shape[0] < 3:
+    if points.shape[0] < 6 or (points.shape[0] % 2) == 1:
         return None, None, None
+    full_coordinates_image = points.reshape(n, 2)
     polygon_image = Polygon(full_coordinates_image)
 
     # Remove the final point (require not to be closed but Polygon adds
