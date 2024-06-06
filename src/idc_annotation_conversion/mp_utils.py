@@ -1,4 +1,5 @@
 """Utilities for multiprocessing."""
+import logging
 from multiprocessing import Process, Queue
 from typing import Any, Sequence
 
@@ -86,7 +87,8 @@ class Pipeline:
 
             def source_wrapped(data, out_queue):
                 obj = src_cls(*src_args, **src_kwargs)
-                for d in data:
+                for i, d in enumerate(data):
+                    logging.info(f"Processing item {i+1}/{len(data)}")
                     res = obj(d)
                     if res is not None:
                         out_queue.put(res)

@@ -599,8 +599,8 @@ class SegmentationCreator:
             the input dictionary, plus the following additional keys:
 
             - segmentations: List[hd.seg.Segmentation]
-                DICOM segmentation image(s) encoding the original annotations in raster
-                format.
+                DICOM segmentation image(s) encoding the original annotations
+                in raster format.
 
         """
         # Unpack inputs
@@ -978,7 +978,10 @@ class FileUploader:
     "-w",
     type=int,
     default=0,
-    help="Number of subprocesses to use. If 0, the main thread is used."
+    help=(
+        "Number of subprocesses for CSV parsing to use. If 0, the main thread "
+        "is used."
+    ),
 )
 @click.option(
     "--pull-process/--no-pull-process",
