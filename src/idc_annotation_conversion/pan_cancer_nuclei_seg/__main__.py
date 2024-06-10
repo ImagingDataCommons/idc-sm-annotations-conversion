@@ -836,6 +836,13 @@ class FileUploader:
     ),
 )
 @click.option(
+    "-f",
+    "--blob-filter",
+    help=(
+        "Only process annotations blobs whose name contains this string."
+    ),
+)
+@click.option(
     "--number",
     "-n",
     type=int,
@@ -1005,6 +1012,7 @@ def run(
     dimension_organization_type: str,
     create_pyramid: bool,
     csv_blob: Optional[str] = None,
+    blob_filter: Optional[str] = None,
     dicom_archive: Optional[str] = None,
     archive_token_url: Optional[str] = None,
     archive_client_id: Optional[str] = None,
@@ -1042,6 +1050,11 @@ def run(
 
     if keep_existing and not store_bucket:
         raise ValueError("keep_existing requires store_bucket")
+
+    if csv_blob is not None and blob_filter is not None:
+        raise TypeError(
+            "Only one of csv_blob and blob_filter should be specified."
+        )
 
     # Access bucket containing annotations
     storage_client = storage.Client(project=cloud_config.GCP_PROJECT_ID)
@@ -1106,6 +1119,11 @@ def run(
                 b for b in ann_bucket.list_blobs(prefix=collection_prefix)
                 if b.name.endswith('.svs.tar.gz')
             ]
+
+            if blob_filter is not None:
+                collection_blobs = [
+                    b for b in collection_blobs if blob_filter in b.name
+                ]
 
             for blob in collection_blobs:
 
