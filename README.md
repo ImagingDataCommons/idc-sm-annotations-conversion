@@ -78,3 +78,13 @@ You can see the options by running `--help` when calling the submodule. E.g.:
 ```bash
 python -m idc_annotation_conversion.pan_cancer_nuclei_seg --help
 ```
+
+### Modules
+
+The following modules are currently available:
+
+- `pan_cancer_nuclei_seg`: Conversion of Pan Cancer Nuclei segmentations from
+  XML to ANN and SEGs for various TCGA collections.
+- `rms`: Conversion of annotations related to the "RMS-Mutation-Prediction"
+  collection. Specifically conversion of hand annotated regions to SR, and
+  ML generated segmentations to SEG.
