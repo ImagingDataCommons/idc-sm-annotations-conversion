@@ -1,11 +1,15 @@
 """Functions to convert single annotations into SRs"""
+import logging
+from time import time
 from typing import List, Union
 import xml
 
-import highdicom as hd
 import numpy as np
+import highdicom as hd
+import pydicom
 from pydicom import Dataset
 from pydicom.sr.codedict import codes
+from pydicom.uid import JPEGLSLossless, ExplicitVRLittleEndian
 
 from idc_annotation_conversion.rms import metadata_config
 
@@ -171,3 +175,89 @@ def convert_xml_annotation(
     )
 
     return sr
+
+
+def convert_segmentation(
+    source_images: List[pydicom.Dataset],
+    mask: np.ndarray,
+    create_pyramid: bool,
+    segmentation_type: Union[hd.seg.SegmentationTypeValues, str],
+    dimension_organization_type: Union[hd.DimensionOrganizationTypeValues, str],
+) -> List[hd.seg.Segmentation]:
+    seg_start_time = time()
+
+    segment_descriptions = []
+    for number, (label, (prop_code, cat_code)) in enumerate(
+        metadata_config.finding_codes.items(),
+        start=1
+    ):
+        desc = hd.seg.SegmentDescription(
+            segment_number=number,
+            segment_label=label,
+            segmented_property_category=cat_code,
+            segmented_property_type=prop_code,
+            algorithm_type=hd.seg.SegmentAlgorithmTypeValues.AUTOMATIC,
+            algorithm_identification=metadata_config.algorithm_identification
+        )
+        segment_descriptions.append(desc)
+
+    segmentation_type = hd.seg.SegmentationTypeValues(segmentation_type)
+    dimension_organization_type = hd.DimensionOrganizationTypeValues(
+        dimension_organization_type
+    )
+
+    # Compression method depends on what is possible given the chosen
+    # segmentation type
+    transfer_syntax_uid = {
+        hd.seg.SegmentationTypeValues.BINARY: ExplicitVRLittleEndian,
+        hd.seg.SegmentationTypeValues.FRACTIONAL: JPEGLSLossless,
+    }[segmentation_type]
+
+    omit_empty_frames = dimension_organization_type.value != "TILED_FULL"
+
+    if create_pyramid:
+        seg_start_time = time()
+        segmentations = hd.seg.pyramid.create_segmentation_pyramid(
+            source_images=source_images,
+            pixel_arrays=[segmentation_mask],
+            segmentation_type=segmentation_type,
+            segment_descriptions=segment_descriptions,
+            series_instance_uid=hd.UID(),
+            series_number=20,
+            manufacturer=metadata_config.manufacturer,
+            manufacturer_model_name=metadata_config.manufacturer_model_name,
+            software_versions=metadata_config.software_versions,
+            device_serial_number=metadata_config.device_serial_number,
+            transfer_syntax_uid=transfer_syntax_uid,
+            max_fractional_value=1,
+            dimension_organization_type=dimension_organization_type,
+            omit_empty_frames=omit_empty_frames,
+        )
+        seg_time = time() - seg_start_time
+        logging.info(f"Created DICOM Segmentations in {seg_time:.1f}s.")
+    else:
+        seg_start_time = time()
+        segmentation = hd.seg.Segmentation(
+            source_images=[source_image_metadata],
+            pixel_array=segmentation_mask,
+            segmentation_type=segmentation_type,
+            segment_descriptions=segment_descriptions,
+            series_instance_uid=hd.UID(),
+            series_number=20,
+            sop_instance_uid=hd.UID(),
+            instance_number=1,
+            manufacturer=metadata_config.manufacturer,
+            manufacturer_model_name=metadata_config.manufacturer_model_name,
+            software_versions=metadata_config.software_versions,
+            device_serial_number=metadata_config.device_serial_number,
+            transfer_syntax_uid=transfer_syntax_uid,
+            max_fractional_value=1,
+            tile_pixel_array=True,
+            dimension_organization_type=dimension_organization_type,
+            omit_empty_frames=omit_empty_frames,
+        )
+        segmentations = [segmentation]
+        seg_time = time() - seg_start_time
+        logging.info(f"Created DICOM Segmentation in {seg_time:.1f}s.")
+
+    return segmentations
