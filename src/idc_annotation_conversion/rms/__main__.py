@@ -2,6 +2,7 @@
 import datetime
 import logging
 import os
+from io import BytesIO
 from itertools import islice
 from pathlib import Path
 from typing import Optional, List
@@ -9,6 +10,9 @@ from xml.etree import ElementTree
 
 import click
 from google.cloud import bigquery, storage
+import numpy as np
+import pandas as pd
+from PIL import Image
 
 from idc_annotation_conversion import cloud_config, cloud_io
 from idc_annotation_conversion.rms.convert import convert_xml_annotation
@@ -17,6 +21,50 @@ from idc_annotation_conversion.rms.convert import convert_xml_annotation
 # Bucket containing annotations for this project
 ANNOTATION_BUCKET_PROJECT = "idc-external-031"
 ANNOTATION_BUCKET = "rms_annotation_test_oct_2023"
+
+
+def find_series(
+    container_prefix: str,
+    bq_client: bigquery.Client,
+) -> pd.DataFrame:
+    """Find the DICOM WSI series given the container prefix.
+
+    Parameters
+    ----------
+    container_prefix: str
+        Container prefix.
+    bq_client: google.cloud.bigquery.Client
+        Existing BigQuery client object.
+
+    Returns
+    -------
+    pandas.DataFrame:
+        DataFrame containing information on each instance in the matching
+        series.
+
+    """
+    selection_query = f"""
+        SELECT
+            ContainerIdentifier,
+            crdc_instance_uuid,
+            crdc_series_uuid,
+            LossyImageCompression,
+            TotalPixelMatrixRows,
+            TotalPixelMatrixColumns,
+            Cast(NumberOfFrames AS int) AS NumberOfFrames
+        FROM
+            bigquery-public-data.idc_v16.dicom_all
+        WHERE
+            ContainerIdentifier LIKE "{container_prefix}%"
+            AND collection_id = "rms_mutation_prediction"
+            AND ARRAY_TO_STRING(ImageType,",") LIKE "%VOLUME%"
+            AND LossyImageCompression = "00"
+        ORDER BY
+            NumberOfFrames DESC
+    """
+    selection_result = bq_client.query(selection_query)
+    selection_df = selection_result.result().to_dataframe()
+    return selection_df
 
 
 @click.command()
@@ -131,25 +179,7 @@ def run(
                 logging.info(f"Skipping case {container_prefix}.")
                 continue
 
-        selection_query = f"""
-            SELECT
-                ContainerIdentifier,
-                crdc_instance_uuid,
-                crdc_series_uuid,
-                LossyImageCompression,
-                Cast(NumberOfFrames AS int) AS NumberOfFrames
-            FROM
-                bigquery-public-data.idc_v16.dicom_all
-            WHERE
-                ContainerIdentifier LIKE "{container_prefix}%"
-                AND collection_id = "rms_mutation_prediction"
-                AND ARRAY_TO_STRING(ImageType,",") LIKE "%VOLUME%"
-                AND LossyImageCompression = "00"
-            ORDER BY
-                NumberOfFrames DESC
-        """
-        selection_result = bq_client.query(selection_query)
-        selection_df = selection_result.result().to_dataframe()
+        selection_df = find_series(container_prefix, bq_client)
         container_id = selection_df.ContainerIdentifier.iloc[0]
 
         assert selection_df.crdc_series_uuid.nunique() == 1, "Found multiple source series"
@@ -223,28 +253,80 @@ def run(
     help="Store as a fractional (probabilistic) mask.",
     show_default=True,
 )
-def run_seg(fractional: bool):
-    ann_storage_client = storage.Client(project=ANNOTATION_BUCKET_PROJECT)
-    ann_bucket = ann_storage_client.bucket(ANNOTATION_BUCKET)
+@click.option(
+    "--number",
+    "-n",
+    type=int,
+    help="Number to process per collection. All by default.",
+)
+@click.option(
+    "--excluded-cases",
+    "-e",
+    multiple=True,
+    help="Container IDs (before underscore) to skip. Multiple may be provided",
+)
+def run_seg(
+    fractional: bool,
+    number: Optional[int],
+    excluded_cases: Optional[List[str]] = None,
+):
 
-    case = "PALMPL-0BMX5D-AKA-RMS2397"
-    case_prefix = "PALMPL-0BMX5D_1"
-    mask_type = "prob" if fractional else "pred"
-    mask_blob = ann_bucket.get_blob(
-        f"{case}/model_prediction/{case_prefix}_{mask_type}.png"
-    )
-
-    mask_bytes = mask_blob.download_as_bytes()
-    import numpy as np
-    from PIL import Image
+    # Images are so large that they will trigger decompression errors unless
+    # you do this...
     Image.MAX_IMAGE_PIXELS = 1000000000
-    from io import BytesIO
-    mask_im = np.array(Image.open(BytesIO(mask_bytes)))
-    print(mask_im.shape)
-    print(np.unique(mask_im))
-    print(np.array_equal(mask_im[:, :, 0], mask_im[:, :, 1]))
+
+    storage_client = storage.Client(project=cloud_config.GCP_PROJECT_ID)
+    output_client = storage.Client(project=cloud_config.OUTPUT_GCP_PROJECT_ID)
+    public_bucket = storage_client.bucket(cloud_config.DICOM_IMAGES_BUCKET)
+
+    mask_storage_client = storage.Client(project=ANNOTATION_BUCKET_PROJECT)
+    mask_bucket = mask_storage_client.bucket(ANNOTATION_BUCKET)
+
+    # Setup bigquery client
+    bq_client = bigquery.Client(cloud_config.GCP_PROJECT_ID)
+
+    prefix = "HyunReferenceModelAllOutputs/predictions"
+    for mask_blob in islice(
+        mask_bucket.list_blobs(prefix=prefix),
+        1,  # first item is the directory itself
+        number + 1 if number is not None else None,
+    ):
+        if not mask_blob.name.endswith(".npy"):
+            continue
+
+        logging.info(f"Processing annotation in {mask_blob.name}.")
+        container_prefix, *_ = mask_blob.name.split("/")[-1].replace(".npy", "").split("_", maxsplit=1)
+        if excluded_cases is not None:
+            if container_prefix in excluded_cases:
+                logging.info(f"Skipping case {container_prefix}.")
+                continue
+
+        selection_df = find_series(container_prefix, bq_client)
+        container_id = selection_df.ContainerIdentifier.iloc[0]
+
+        assert selection_df.crdc_series_uuid.nunique() == 1, "Found multiple source series"
+
+        mask_bytes = mask_blob.download_as_bytes()
+        mask_im = np.load(BytesIO(mask_bytes))
+
+        print("mask", mask_im.shape, mask_im.dtype)
+        print(mask_im.min())
+        print(mask_im.max())
+        print("images")
+        for _, row in selection_df.iterrows():
+            print(row.TotalPixelMatrixRows, row.TotalPixelMatrixColumns)
+        print()
+
+        logging.info("Retrieving source images.")
+        wsi_dcm = [
+            cloud_io.read_dataset_from_blob(
+                bucket=public_bucket,
+                blob_name=f"{row.crdc_series_uuid}/{row.crdc_instance_uuid}.dcm",
+            )
+            for _, row in selection_df.iterrows()
+        ]
 
 
 
 if __name__ == "__main__":
-    run()
+    run_seg()
