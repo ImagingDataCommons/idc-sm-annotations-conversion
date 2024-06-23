@@ -4,7 +4,7 @@ import logging
 import os
 from itertools import islice
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 from xml.etree import ElementTree
 
 import click
@@ -89,7 +89,7 @@ def run(
     store_wsi_dicom: bool,
     use_scoord3d: bool,
     include_measurements: bool,
-    excluded_cases: Optional[list[str]] = None,
+    excluded_cases: Optional[List[str]] = None,
 ):
     """Main process for conversion of RMS XML annotations to DICOM SRs."""
     logging.basicConfig(level=logging.INFO)

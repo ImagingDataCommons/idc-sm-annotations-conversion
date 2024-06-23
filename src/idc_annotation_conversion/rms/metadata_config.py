@@ -85,6 +85,14 @@ procedure_reported = hd.sr.CodedConcept(
     scheme_designator="SCT",
 )
 
+# Algorithm Identification for segmentation
+algorithm_identification = hd.AlgorithmIdentificationSequence(
+    name="RMS Semgntation Tool",
+    version="1.0",
+    source="https://doi.org/10.1158/1078-0432.CCR-22-1663",
+    family=codes.cid7162.ArtificialIntelligence,
+)
+
 is_complete = True
 is_final = True
 is_verified = False
