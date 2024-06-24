@@ -179,11 +179,39 @@ def convert_xml_annotation(
 
 def convert_segmentation(
     source_images: List[pydicom.Dataset],
-    mask: np.ndarray,
+    segmentation_array: np.ndarray,
     create_pyramid: bool,
     segmentation_type: Union[hd.seg.SegmentationTypeValues, str],
     dimension_organization_type: Union[hd.DimensionOrganizationTypeValues, str],
 ) -> List[hd.seg.Segmentation]:
+    """Store segmentation masks as DICOM segmentations.
+
+    Parameters
+    ----------
+    source_images: Sequence[pydicom.Dataset]
+        List of pydicom datasets containing the metadata of the image (already
+        converted to DICOM format). Note that the metadata of the image at full
+        resolution should appear first in this list. These can be the full image
+        datasets, but the PixelData attributes are not required.
+    segmentation_array: np.ndarray
+        Segmentation output (before thresholding). Should have shape (rows,
+        columns, 5), where 5 is the number of classes. Values are in the range
+        0 to 1.
+    create_pyramid: bool, optional
+        Whether to create a full pyramid of segmentations (rather than a single
+        segmentation at the highest resolution).
+    segmentation_type: Union[hd.seg.SegmentationTypeValues, str], optional
+        Segmentation type (BINARY or FRACTIONAL) for the Segmentation Image
+        (if any).
+    dimension_organization_type: Union[hd.DimensionOrganizationTypeValues, str], optional
+        Dimension organization type of the output segmentations.
+
+    Returns
+    -------
+    segmentations: list[hd.seg.Segmentation]
+        DICOM segmentation image(s) encoding the original annotations
+
+    """
     seg_start_time = time()
 
     segment_descriptions = []
@@ -215,11 +243,17 @@ def convert_segmentation(
 
     omit_empty_frames = dimension_organization_type.value != "TILED_FULL"
 
+    if segmentation_type == hd.seg.SegmentationTypeValues.FRACTIONAL:
+        # Add frame axis and remove background class
+        mask = segmentation_array[None, :, :, 1:]
+    elif segmentation_type == hd.seg.SegmentationTypeValues.BINARY:
+        mask = np.argmax(segmentation_array, axis=2)[None].astype(np.uint8)
+
     if create_pyramid:
         seg_start_time = time()
         segmentations = hd.seg.pyramid.create_segmentation_pyramid(
             source_images=source_images,
-            pixel_arrays=[segmentation_mask],
+            pixel_arrays=[mask],
             segmentation_type=segmentation_type,
             segment_descriptions=segment_descriptions,
             series_instance_uid=hd.UID(),
@@ -238,8 +272,8 @@ def convert_segmentation(
     else:
         seg_start_time = time()
         segmentation = hd.seg.Segmentation(
-            source_images=[source_image_metadata],
-            pixel_array=segmentation_mask,
+            source_image=source_images[0],
+            pixel_array=mask,
             segmentation_type=segmentation_type,
             segment_descriptions=segment_descriptions,
             series_instance_uid=hd.UID(),

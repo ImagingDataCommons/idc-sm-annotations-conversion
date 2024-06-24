@@ -10,12 +10,16 @@ from xml.etree import ElementTree
 
 import click
 from google.cloud import bigquery, storage
+import highdicom as hd
 import numpy as np
 import pandas as pd
 from PIL import Image
 
 from idc_annotation_conversion import cloud_config, cloud_io
-from idc_annotation_conversion.rms.convert import convert_xml_annotation
+from idc_annotation_conversion.rms.convert import (
+    convert_xml_annotation,
+    convert_segmentation,
+)
 
 
 # Bucket containing annotations for this project
@@ -248,10 +252,42 @@ def run(
 
 @click.command()
 @click.option(
-    "--fractional/--binary",
-    "-f/-F",
-    help="Store as a fractional (probabilistic) mask.",
+    "--output-dir",
+    "-o",
+    type=click.Path(path_type=Path, file_okay=False),
+    help="Output directory, default: no output directory",
+)
+@click.option(
+    "--dimension-organization-type",
+    "-T",
+    type=click.Choice(
+        [v.name for v in hd.DimensionOrganizationTypeValues],
+        case_sensitive=False,
+    ),
+    default="TILED_FULL",
     show_default=True,
+    help=(
+        "Dimension organization type for segmentations. TILED_FULL (default) "
+        "or TILED_SPARSE."
+    ),
+)
+@click.option(
+    "--create-pyramid/--no-create-pyramid",
+    "-q/-Q",
+    default=True,
+    show_default=True,
+    help="Create a full segmentation pyramid series.",
+)
+@click.option(
+    "--segmentation-type",
+    "-t",
+    type=click.Choice(
+        [v.name for v in hd.seg.SegmentationTypeValues],
+        case_sensitive=False,
+    ),
+    default="FRACTIONAL",
+    show_default=True,
+    help="Segmentation type for the Segmentation Image, if any.",
 )
 @click.option(
     "--number",
@@ -266,10 +302,16 @@ def run(
     help="Container IDs (before underscore) to skip. Multiple may be provided",
 )
 def run_seg(
-    fractional: bool,
+    output_dir: Optional[Path],
     number: Optional[int],
+    segmentation_type: str,
+    dimension_organization_type: str,
+    create_pyramid: bool,
     excluded_cases: Optional[List[str]] = None,
 ):
+
+    if output_dir is not None:
+        output_dir.mkdir(exist_ok=True)
 
     # Images are so large that they will trigger decompression errors unless
     # you do this...
@@ -307,15 +349,18 @@ def run_seg(
         assert selection_df.crdc_series_uuid.nunique() == 1, "Found multiple source series"
 
         mask_bytes = mask_blob.download_as_bytes()
-        mask_im = np.load(BytesIO(mask_bytes))
+        mask = np.load(BytesIO(mask_bytes))
 
-        print("mask", mask_im.shape, mask_im.dtype)
-        print(mask_im.min())
-        print(mask_im.max())
-        print("images")
-        for _, row in selection_df.iterrows():
-            print(row.TotalPixelMatrixRows, row.TotalPixelMatrixColumns)
-        print()
+        for i, row in selection_df.iterrows():
+            if mask.shape[:2] == (
+                row.TotalPixelMatrixRows, row.TotalPixelMatrixColumns
+            ):
+                start_index = i
+                break
+        else:
+            raise RuntimeError(
+                f"No source image matching mask dimensions for {container_id}."
+            )
 
         logging.info("Retrieving source images.")
         wsi_dcm = [
@@ -323,9 +368,27 @@ def run_seg(
                 bucket=public_bucket,
                 blob_name=f"{row.crdc_series_uuid}/{row.crdc_instance_uuid}.dcm",
             )
-            for _, row in selection_df.iterrows()
+            for _, row in selection_df[start_index:].iterrows()
         ]
 
+        segmentations = convert_segmentation(
+            source_images=wsi_dcm,
+            segmentation_array=mask,
+            create_pyramid=create_pyramid,
+            segmentation_type=segmentation_type,
+            dimension_organization_type=dimension_organization_type,
+        )
+
+        # Store objects to filesystem
+        if output_dir is not None:
+            for i, seg in enumerate(segmentations):
+                if create_pyramid:
+                    seg_path = output_dir / f"{container_id}_seg_{i}.dcm"
+                else:
+                    seg_path = output_dir / f"{container_id}_seg.dcm"
+
+                logging.info(f"Writing seg to {str(seg_path)}.")
+                seg.save_as(seg_path)
 
 
 if __name__ == "__main__":
