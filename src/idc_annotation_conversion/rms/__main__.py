@@ -387,6 +387,10 @@ def convert_segmentations(
         mask_bytes = mask_blob.download_as_bytes()
         mask = np.load(BytesIO(mask_bytes))
 
+        # The segmentation mask matches the resolution of one level of the
+        # source pyramid, but which one varies by case. Finding the
+        # matching level and pull only this one and lower resolution
+        # images
         for i, row in selection_df.iterrows():
             if mask.shape[:2] == (
                 row.TotalPixelMatrixRows, row.TotalPixelMatrixColumns
