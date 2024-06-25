@@ -165,9 +165,9 @@ def convert_xml_annotation(
         series_instance_uid=hd.UID(),
         sop_instance_uid=hd.UID(),
         instance_number=1,
-        series_description=metadata_config.series_description,
-        manufacturer=metadata_config.manufacturer,
-        manufacturer_model_name=metadata_config.manufacturer_model_name,
+        series_description=metadata_config.sr_series_description,
+        manufacturer=metadata_config.sr_manufacturer,
+        manufacturer_model_name=metadata_config.sr_manufacturer_model_name,
         software_versions=metadata_config.software_versions,
         device_serial_number=metadata_config.device_serial_number,
         institution_name=metadata_config.institution_name,
@@ -264,8 +264,8 @@ def convert_segmentation(
             segment_descriptions=segment_descriptions,
             series_instance_uid=hd.UID(),
             series_number=20,
-            manufacturer=metadata_config.manufacturer,
-            manufacturer_model_name=metadata_config.manufacturer_model_name,
+            manufacturer=metadata_config.seg_manufacturer,
+            manufacturer_model_name=metadata_config.seg_manufacturer_model_name,
             software_versions=metadata_config.software_versions,
             device_serial_number=metadata_config.device_serial_number,
             transfer_syntax_uid=transfer_syntax_uid,
@@ -273,6 +273,7 @@ def convert_segmentation(
             dimension_organization_type=dimension_organization_type,
             omit_empty_frames=omit_empty_frames,
             workers=workers,
+            series_description=metadata_config.segmentation_series_description,
         )
         seg_time = time() - seg_start_time
         logging.info(f"Created DICOM Segmentations in {seg_time:.1f}s.")
@@ -288,8 +289,8 @@ def convert_segmentation(
             series_number=20,
             sop_instance_uid=hd.UID(),
             instance_number=1,
-            manufacturer=metadata_config.manufacturer,
-            manufacturer_model_name=metadata_config.manufacturer_model_name,
+            manufacturer=metadata_config.seg_manufacturer,
+            manufacturer_model_name=metadata_config.seg_manufacturer_model_name,
             software_versions=metadata_config.software_versions,
             device_serial_number=metadata_config.device_serial_number,
             transfer_syntax_uid=transfer_syntax_uid,
@@ -298,6 +299,7 @@ def convert_segmentation(
             dimension_organization_type=dimension_organization_type,
             omit_empty_frames=omit_empty_frames,
             workers=workers,
+            series_description=metadata_config.segmentation_series_description,
         )
         segmentations = [segmentation]
         seg_time = time() - seg_start_time

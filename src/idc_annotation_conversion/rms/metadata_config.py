@@ -9,7 +9,7 @@ from idc_annotation_conversion.git_utils import (
 )
 
 
-# Dictionary mapping text label found in the XML annoations to tuple of
+# Dictionary mapping text label found in the XML annotations to tuple of
 # (finding_type, finding_category) codes to encode that finding
 finding_codes = {
     "STROMA": (
@@ -62,6 +62,13 @@ finding_codes = {
     ),
 }
 
+# Metadata shared between SRs and SEGs
+software_versions = get_git_remote_url(simplify=True)
+device_serial_number = get_git_commit_hash()
+institution_name = None
+institutional_department_name = None
+
+# Metadata Specific to XML hand anntations
 observer_person_context = hd.sr.ObserverContext(
     observer_type=codes.DCM.Person,
     observer_identifying_attributes=hd.sr.PersonObserverIdentifyingAttributes(
@@ -70,29 +77,26 @@ observer_person_context = hd.sr.ObserverContext(
         )
     )
 )
-
-series_description = "Manual region annotations"
-manufacturer = "Leica Biosystems"
-manufacturer_model_name = "Aperio ImageScope converted with highdicom"
-software_versions = get_git_remote_url(simplify=True)
-device_serial_number = get_git_commit_hash()
-institution_name = None
-institutional_department_name = None
+sr_series_description = "Manual region annotations"
+sr_manufacturer = "Leica Biosystems"
+sr_manufacturer_model_name = "Aperio ImageScope converted with highdicom"
 title = codes.DCM.ImagingMeasurementReport
 procedure_reported = hd.sr.CodedConcept(
     meaning="Light microscopy",
     value="104157003",
     scheme_designator="SCT",
 )
+is_complete = True
+is_final = True
+is_verified = False
 
-# Algorithm Identification for segmentation
+# Metadata Specific to model output segmentations
 algorithm_identification = hd.AlgorithmIdentificationSequence(
     name="RMS Semgntation Tool",
     version="1.0",
     source="https://doi.org/10.1158/1078-0432.CCR-22-1663",
     family=codes.cid7162.ArtificialIntelligence,
 )
-
-is_complete = True
-is_final = True
-is_verified = False
+segmentation_series_description = "Model Output Segmentations"
+seg_manufacturer = "TBC"
+seg_manufacturer_model_name = "TBC"
