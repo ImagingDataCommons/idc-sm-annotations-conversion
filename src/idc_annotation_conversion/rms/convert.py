@@ -250,9 +250,7 @@ def convert_segmentation(
         # Add frame axis and remove background class
         mask = segmentation_array[None, :, :, 1:]
     elif segmentation_type == hd.seg.SegmentationTypeValues.BINARY:
-        print("Before", segmentation_array.shape)
         mask = np.argmax(segmentation_array, axis=2).astype(np.uint8)
-        print("after", mask.shape)
 
     if create_pyramid:
         logging.info("Creating DICOM Segmentations")
