@@ -183,6 +183,7 @@ def convert_segmentation(
     create_pyramid: bool,
     segmentation_type: Union[hd.seg.SegmentationTypeValues, str],
     dimension_organization_type: Union[hd.DimensionOrganizationTypeValues, str],
+    workers: int = 0,
 ) -> List[hd.seg.Segmentation]:
     """Store segmentation masks as DICOM segmentations.
 
@@ -205,6 +206,8 @@ def convert_segmentation(
         (if any).
     dimension_organization_type: Union[hd.DimensionOrganizationTypeValues, str], optional
         Dimension organization type of the output segmentations.
+    workers: int
+        Number of workers to use for frame compression.
 
     Returns
     -------
@@ -247,9 +250,12 @@ def convert_segmentation(
         # Add frame axis and remove background class
         mask = segmentation_array[None, :, :, 1:]
     elif segmentation_type == hd.seg.SegmentationTypeValues.BINARY:
-        mask = np.argmax(segmentation_array, axis=2)[None].astype(np.uint8)
+        print("Before", segmentation_array.shape)
+        mask = np.argmax(segmentation_array, axis=2).astype(np.uint8)
+        print("after", mask.shape)
 
     if create_pyramid:
+        logging.info("Creating DICOM Segmentations")
         seg_start_time = time()
         segmentations = hd.seg.pyramid.create_segmentation_pyramid(
             source_images=source_images,
@@ -266,13 +272,15 @@ def convert_segmentation(
             max_fractional_value=1,
             dimension_organization_type=dimension_organization_type,
             omit_empty_frames=omit_empty_frames,
+            workers=workers,
         )
         seg_time = time() - seg_start_time
         logging.info(f"Created DICOM Segmentations in {seg_time:.1f}s.")
     else:
+        logging.info("Creating DICOM Segmentation")
         seg_start_time = time()
         segmentation = hd.seg.Segmentation(
-            source_image=source_images[0],
+            source_images=source_images[0:1],
             pixel_array=mask,
             segmentation_type=segmentation_type,
             segment_descriptions=segment_descriptions,
@@ -289,6 +297,7 @@ def convert_segmentation(
             tile_pixel_array=True,
             dimension_organization_type=dimension_organization_type,
             omit_empty_frames=omit_empty_frames,
+            workers=workers,
         )
         segmentations = [segmentation]
         seg_time = time() - seg_start_time

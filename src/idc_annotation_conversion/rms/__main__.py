@@ -27,6 +27,11 @@ ANNOTATION_BUCKET_PROJECT = "idc-external-031"
 ANNOTATION_BUCKET = "rms_annotation_test_oct_2023"
 
 
+@click.group()
+def cli():
+    pass
+
+
 def find_series(
     container_prefix: str,
     bq_client: bigquery.Client,
@@ -71,7 +76,7 @@ def find_series(
     return selection_df
 
 
-@click.command()
+@cli.command()
 @click.option(
     "--output-dir",
     "-o",
@@ -132,7 +137,7 @@ def find_series(
     multiple=True,
     help="Container IDs (before underscore) to skip. Multiple may be provided",
 )
-def run(
+def convert_xml_annotations(
     number: Optional[int],
     output_dir: Optional[Path],
     output_bucket: str,
@@ -143,7 +148,7 @@ def run(
     include_measurements: bool,
     excluded_cases: Optional[List[str]] = None,
 ):
-    """Main process for conversion of RMS XML annotations to DICOM SRs."""
+    """Convert RMS XML annotations to DICOM SRs."""
     logging.basicConfig(level=logging.INFO)
 
     # Suppress highdicom logging (very talkative)
@@ -250,12 +255,17 @@ def run(
                     dcm.save_as(dcm_path)
 
 
-@click.command()
+@cli.command()
 @click.option(
     "--output-dir",
     "-o",
     type=click.Path(path_type=Path, file_okay=False),
     help="Output directory, default: no output directory",
+)
+@click.option(
+    "--output-bucket",
+    "-b",
+    help="Name of output bucket, if any. Default: no output bucket.",
 )
 @click.option(
     "--dimension-organization-type",
@@ -293,7 +303,14 @@ def run(
     "--number",
     "-n",
     type=int,
-    help="Number to process per collection. All by default.",
+    help="Number of cases to process. All by default.",
+)
+@click.option(
+    "--workers",
+    "-w",
+    type=int,
+    default=0,
+    help="Numbers of workers to use for frame compression.",
 )
 @click.option(
     "--excluded-cases",
@@ -301,25 +318,38 @@ def run(
     multiple=True,
     help="Container IDs (before underscore) to skip. Multiple may be provided",
 )
-def run_seg(
+def convert_segmentations(
     output_dir: Optional[Path],
+    output_bucket: Optional[str],
     number: Optional[int],
     segmentation_type: str,
     dimension_organization_type: str,
     create_pyramid: bool,
+    workers: int,
     excluded_cases: Optional[List[str]] = None,
 ):
+    """Convert RMS model segmentation masks to DICOM segmentations."""
+    logging.basicConfig(level=logging.INFO)
+
+    # Suppress highdicom logging (very talkative)
+    logging.getLogger("highdicom.base").setLevel(logging.WARNING)
+    logging.getLogger("highdicom.seg.sop").setLevel(logging.WARNING)
 
     if output_dir is not None:
         output_dir.mkdir(exist_ok=True)
 
-    # Images are so large that they will trigger decompression errors unless
-    # you do this...
-    Image.MAX_IMAGE_PIXELS = 1000000000
-
     storage_client = storage.Client(project=cloud_config.GCP_PROJECT_ID)
     output_client = storage.Client(project=cloud_config.OUTPUT_GCP_PROJECT_ID)
     public_bucket = storage_client.bucket(cloud_config.DICOM_IMAGES_BUCKET)
+    if output_bucket is not None:
+        output_bucket_obj = output_client.bucket(output_bucket)
+
+        if not output_bucket_obj.exists():
+            output_bucket_obj.create(
+                location=cloud_config.GCP_DEFAULT_LOCATION
+            )
+    else:
+        output_bucket_obj = None
 
     mask_storage_client = storage.Client(project=ANNOTATION_BUCKET_PROJECT)
     mask_bucket = mask_storage_client.bucket(ANNOTATION_BUCKET)
@@ -337,7 +367,12 @@ def run_seg(
             continue
 
         logging.info(f"Processing annotation in {mask_blob.name}.")
-        container_prefix, *_ = mask_blob.name.split("/")[-1].replace(".npy", "").split("_", maxsplit=1)
+        container_prefix, *_ = (
+            mask_blob.name
+            .split("/")[-1]
+            .replace(".npy", "")
+            .split("_", maxsplit=1)
+        )
         if excluded_cases is not None:
             if container_prefix in excluded_cases:
                 logging.info(f"Skipping case {container_prefix}.")
@@ -346,7 +381,8 @@ def run_seg(
         selection_df = find_series(container_prefix, bq_client)
         container_id = selection_df.ContainerIdentifier.iloc[0]
 
-        assert selection_df.crdc_series_uuid.nunique() == 1, "Found multiple source series"
+        if selection_df.crdc_series_uuid.nunique() != 1:
+            raise RuntimeError("Found multiple source series")
 
         mask_bytes = mask_blob.download_as_bytes()
         mask = np.load(BytesIO(mask_bytes))
@@ -377,6 +413,7 @@ def run_seg(
             create_pyramid=create_pyramid,
             segmentation_type=segmentation_type,
             dimension_organization_type=dimension_organization_type,
+            workers=workers,
         )
 
         # Store objects to filesystem
@@ -387,9 +424,24 @@ def run_seg(
                 else:
                     seg_path = output_dir / f"{container_id}_seg.dcm"
 
-                logging.info(f"Writing seg to {str(seg_path)}.")
+                logging.info(f"Writing segmentation to {str(seg_path)}.")
                 seg.save_as(seg_path)
+
+        # Store to bucket
+        if output_bucket_obj is not None:
+            for i, seg in enumerate(segmentations):
+                if create_pyramid:
+                    seg_blob_name = f"{container_id}_seg_{i}.dcm"
+                else:
+                    seg_blob_name = f"{container_id}_seg.dcm"
+
+                logging.info("Writing segmentation to output bucket.")
+                cloud_io.write_dataset_to_blob(
+                    seg,
+                    output_bucket_obj,
+                    seg_blob_name,
+                )
 
 
 if __name__ == "__main__":
-    run_seg()
+    cli()
