@@ -10,7 +10,7 @@ packages = [{include = "idc_annotation_conversion", from = "src" }]
 python = "^3.9"
 numpy = "<2.0.0"
 pydicom = "^2.4.4"
-highdicom = { git = "https://github.com/ImagingDataCommons/highdicom.git", rev = "082342558d5308f9f7a9d0ef476ada850ab44717" }
+highdicom = { git = "https://github.com/ImagingDataCommons/highdicom.git", rev = "d7bfe7c663a9089489a8bcb852ef36b6fb6dac43" }
 google-cloud-bigquery = "^3.6.0"
 google-cloud-storage = "^2.7.0"
 google-auth = "^2.16.2"

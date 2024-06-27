@@ -701,7 +701,7 @@ protobuf = ">=5.26.1,<6.0dev"
 
 [[package]]
 name = "highdicom"
-version = "0.22.0"
+version = "0.0.0"
 description = "High-level DICOM abstractions."
 category = "main"
 optional = false
@@ -716,13 +716,15 @@ pillow-jpls = ">=1.0"
 pydicom = ">=2.3.0,<2.4.0 || >2.4.0"
 
 [package.extras]
+docs = ["sphinx-autodoc-typehints (==1.17.0)", "sphinx-pyreverse (==0.0.17)", "sphinx-rtd-theme (==1.0.0)", "sphinxcontrib-autoprogram (==0.1.7)", "sphinxcontrib-websupport (==1.2.4)"]
 libjpeg = ["pylibjpeg (>=1.4)", "pylibjpeg-libjpeg (>=1.3)", "pylibjpeg-openjpeg (>=1.2)"]
+test = ["mypy (==0.971)", "numpy-stubs @ git+https://github.com/numpy/numpy-stubs@201115370a0c011d879d69068b60509accc7f750", "pytest (==7.1.2)", "pytest-cov (==3.0.0)", "pytest-flake8 (==1.1.1)"]
 
 [package.source]
 type = "git"
 url = "https://github.com/ImagingDataCommons/highdicom.git"
-reference = "082342558d5308f9f7a9d0ef476ada850ab44717"
-resolved_reference = "082342558d5308f9f7a9d0ef476ada850ab44717"
+reference = "d7bfe7c663a9089489a8bcb852ef36b6fb6dac43"
+resolved_reference = "d7bfe7c663a9089489a8bcb852ef36b6fb6dac43"
 
 [[package]]
 name = "idna"
@@ -1791,4 +1793,4 @@ test = ["big-O", "importlib-resources", "jaraco.functools", "jaraco.itertools", 
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.9"
-content-hash = "800684ef0bf6171b0ac86e87f67d9a980f920b4bf29c9f3dbc66a7566dec9b07"
+content-hash = "70c7023be3acfca451161d488f17283c58bb34afdbaeb48f1f85cd62f39f784d"
