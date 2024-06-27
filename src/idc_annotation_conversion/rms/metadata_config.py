@@ -98,11 +98,11 @@ segmentation_channel_order = [
     "ERMS",
 ]
 algorithm_identification = hd.AlgorithmIdentificationSequence(
-    name="RMS Semgntation Tool",
-    version="1.0",
-    source="https://doi.org/10.1158/1078-0432.CCR-22-1663",
+    name="Rhabdomyosarcoma Pathology CNN AI Segmentation Model",
+    version="V1.0",
+    source="Frederick National Lab for Cancer Research",
     family=codes.cid7162.ArtificialIntelligence,
 )
-segmentation_series_description = "Model Output Segmentations"
-seg_manufacturer = "TBC"
-seg_manufacturer_model_name = "TBC"
+segmentation_series_description = "AI Model Tissue Segmentations"
+seg_manufacturer = "NCI/FNLCR"
+seg_manufacturer_model_name = "FNLCR_IVG_RMS_iou_0.7343_0.7175_epoch_60"
