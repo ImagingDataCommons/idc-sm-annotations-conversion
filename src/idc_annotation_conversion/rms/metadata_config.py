@@ -91,6 +91,12 @@ is_final = True
 is_verified = False
 
 # Metadata Specific to model output segmentations
+segmentation_channel_order = [
+    "NECROSIS",
+    "STROMA",
+    "ARMS",
+    "ERMS",
+]
 algorithm_identification = hd.AlgorithmIdentificationSequence(
     name="RMS Semgntation Tool",
     version="1.0",

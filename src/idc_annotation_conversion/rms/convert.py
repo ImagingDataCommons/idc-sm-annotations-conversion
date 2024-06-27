@@ -217,18 +217,21 @@ def convert_segmentation(
     """
     seg_start_time = time()
 
+    container_id = source_images[0].ContainerIdentifier
     segment_descriptions = []
-    for number, (label, (prop_code, cat_code)) in enumerate(
-        metadata_config.finding_codes.items(),
+    for (number, label) in enumerate(
+        metadata_config.segmentation_channel_order,
         start=1
     ):
         desc = hd.seg.SegmentDescription(
             segment_number=number,
             segment_label=label,
-            segmented_property_category=cat_code,
-            segmented_property_type=prop_code,
+            segmented_property_category=metadata_config.finding_codes[label][1],
+            segmented_property_type=metadata_config.finding_codes[label][0],
             algorithm_type=hd.seg.SegmentAlgorithmTypeValues.AUTOMATIC,
-            algorithm_identification=metadata_config.algorithm_identification
+            algorithm_identification=metadata_config.algorithm_identification,
+            tracking_id=f"{container_id}-{label}",
+            tracking_uid=hd.UID(),
         )
         segment_descriptions.append(desc)
 
