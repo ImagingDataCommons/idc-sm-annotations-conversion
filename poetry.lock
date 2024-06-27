@@ -721,8 +721,8 @@ libjpeg = ["pylibjpeg (>=1.4)", "pylibjpeg-libjpeg (>=1.3)", "pylibjpeg-openjpeg
 [package.source]
 type = "git"
 url = "https://github.com/ImagingDataCommons/highdicom.git"
-reference = "ad46d6cac92dda9d04508dd3e7244bb6fd4f90ec"
-resolved_reference = "ad46d6cac92dda9d04508dd3e7244bb6fd4f90ec"
+reference = "082342558d5308f9f7a9d0ef476ada850ab44717"
+resolved_reference = "082342558d5308f9f7a9d0ef476ada850ab44717"
 
 [[package]]
 name = "idna"
@@ -1791,4 +1791,4 @@ test = ["big-O", "importlib-resources", "jaraco.functools", "jaraco.itertools", 
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.9"
-content-hash = "49430f557adc8fa248e837f32069537dfec00cfaa0eadfb08052d66314c62298"
+content-hash = "800684ef0bf6171b0ac86e87f67d9a980f920b4bf29c9f3dbc66a7566dec9b07"
