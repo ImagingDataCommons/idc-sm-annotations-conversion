@@ -273,7 +273,7 @@ def convert_segmentation(
             dimension_organization_type=dimension_organization_type,
             omit_empty_frames=omit_empty_frames,
             workers=workers,
-            series_description=metadata_config.segmentation_series_description,
+            series_description=metadata_config.segmentation_series_description_by_type[segmentation_type],
         )
         seg_time = time() - seg_start_time
         logging.info(f"Created DICOM Segmentations in {seg_time:.1f}s.")
@@ -298,7 +298,7 @@ def convert_segmentation(
             dimension_organization_type=dimension_organization_type,
             omit_empty_frames=omit_empty_frames,
             workers=workers,
-            series_description=metadata_config.segmentation_series_description,
+            series_description=metadata_config.segmentation_series_description_by_type[segmentation_type],
         )
         segmentations = [segmentation]
         seg_time = time() - seg_start_time

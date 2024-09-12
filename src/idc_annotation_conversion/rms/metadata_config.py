@@ -103,6 +103,9 @@ algorithm_identification = hd.AlgorithmIdentificationSequence(
     source="Frederick National Lab for Cancer Research",
     family=codes.cid7162.ArtificialIntelligence,
 )
-segmentation_series_description = "AI Model Tissue Segmentations"
+segmentation_series_description_by_type = {
+    hd.seg.SegmentationTypeValues.FRACTIONAL: "AI Model Tissue Segmentations",
+    hd.seg.SegmentationTypeValues.BINARY: "AI Model Tissue Segmentations (Binarized)",
+}
 seg_manufacturer = "NCI/FNLCR"
 seg_manufacturer_model_name = "FNLCR_IVG_RMS_iou_0.7343_0.7175_epoch_60"
