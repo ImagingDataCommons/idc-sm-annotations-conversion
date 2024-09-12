@@ -297,7 +297,7 @@ def convert_xml_annotations(
     ),
     default="FRACTIONAL",
     show_default=True,
-    help="Segmentation type for the Segmentation Image, if any.",
+    help="Segmentation type for the Segmentation Image.",
 )
 @click.option(
     "--number",
