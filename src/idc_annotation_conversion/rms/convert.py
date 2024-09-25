@@ -131,15 +131,8 @@ def convert_xml_annotation(
             )
             roi_groups.append(roi)
 
-    # TODO fold this logic into highdicom library
-    subject_context_specimen = hd.sr.SubjectContextSpecimen(
-        uid=source_image.SpecimenDescriptionSequence[0].SpecimenUID,
-        identifier=source_image.SpecimenDescriptionSequence[0].SpecimenIdentifier,
-        container_identifier=source_image.ContainerIdentifier,
-    )
-    subject_context = hd.sr.SubjectContext(
-        subject_class=codes.DCM.Specimen,
-        subject_class_specific_context=subject_context_specimen,
+    subject_context = hd.sr.SubjectContext.from_image(
+        source_image,
     )
 
     observation_context = hd.sr.ObservationContext(

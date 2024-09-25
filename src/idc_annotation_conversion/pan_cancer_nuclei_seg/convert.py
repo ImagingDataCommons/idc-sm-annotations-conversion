@@ -223,22 +223,14 @@ def get_graphic_data(
         annotation_coordinate_type
     ]
 
-    image_orientation = source_image_metadata.ImageOrientationSlide
-    origin = source_image_metadata.TotalPixelMatrixOriginSequence[0]
-    image_position = (
-        float(origin.XOffsetInSlideCoordinateSystem),
-        float(origin.YOffsetInSlideCoordinateSystem),
-        0.0,
+    transformer = hd.spatial.ImageToReferenceTransformer.for_image(
+        source_image_metadata,
+        for_total_pixel_matrix=True,
     )
     pixel_spacing = (
         source_image_metadata.SharedFunctionalGroupsSequence[0]
         .PixelMeasuresSequence[0]
         .PixelSpacing
-    )
-    transformer = hd.spatial.ImageToReferenceTransformer(
-        image_orientation=image_orientation,
-        image_position=image_position,
-        pixel_spacing=pixel_spacing,
     )
     area_per_pixel_um2 = pixel_spacing[0] * pixel_spacing[1] * 1e6
 
