@@ -313,6 +313,16 @@ def convert_xml_annotations(
     help="Numbers of workers to use for frame compression.",
 )
 @click.option(
+    "--store-wsi-dicom/--no-store-wsi-dicom",
+    "-d/-D",
+    default=False,
+    show_default=True,
+    help=(
+        "Download all WSI DICOM files and store in the output directory "
+        "(if any)."
+    ),
+)
+@click.option(
     "--excluded-cases",
     "-e",
     multiple=True,
@@ -326,6 +336,7 @@ def convert_segmentations(
     dimension_organization_type: str,
     create_pyramid: bool,
     workers: int,
+    store_wsi_dicom: bool,
     excluded_cases: Optional[List[str]] = None,
 ):
     """Convert RMS model segmentation masks to DICOM segmentations."""
@@ -430,6 +441,11 @@ def convert_segmentations(
 
                 logging.info(f"Writing segmentation to {str(seg_path)}.")
                 seg.save_as(seg_path)
+
+            if store_wsi_dicom:
+                for i, dcm in enumerate(wsi_dcm):
+                    dcm_path = output_dir / f"{container_id}_im{i}.dcm"
+                    dcm.save_as(dcm_path)
 
         # Store to bucket
         if output_bucket_obj is not None:
