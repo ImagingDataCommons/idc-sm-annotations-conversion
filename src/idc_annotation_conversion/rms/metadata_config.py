@@ -1,4 +1,5 @@
 """Metadata used for RMS conversions."""
+import numpy as np
 import highdicom as hd
 import pydicom
 from pydicom.sr.codedict import codes
@@ -106,6 +107,18 @@ algorithm_identification = hd.AlgorithmIdentificationSequence(
 segmentation_series_description_by_type = {
     hd.seg.SegmentationTypeValues.FRACTIONAL: "AI Model Tissue Segmentations",
     hd.seg.SegmentationTypeValues.BINARY: "AI Model Tissue Segmentations (Binarized)",
+    hd.seg.SegmentationTypeValues.LABELMAP: "AI Model Tissue Segmentations (Labelmap)",
 }
 seg_manufacturer = "NCI/FNLCR"
 seg_manufacturer_model_name = "FNLCR_IVG_RMS_iou_0.7343_0.7175_epoch_60"
+
+red_lut = np.array([0, 255, 41, 0, 0], dtype=np.uint8)
+green_lut = np.array([0, 0, 0, 235, 255], dtype=np.uint8)
+blue_lut = np.array([0, 191, 255, 255, 0], dtype=np.uint8)
+
+labelmap_lut = hd.PaletteColorLUTTransformation(
+    red_lut=hd.PaletteColorLUT(0, red_lut, 'red'),
+    green_lut=hd.PaletteColorLUT(0, green_lut, 'green'),
+    blue_lut=hd.PaletteColorLUT(0, blue_lut, 'blue'),
+    palette_color_lut_uid=hd.UID(),
+)

@@ -9,7 +9,11 @@ import highdicom as hd
 import pydicom
 from pydicom import Dataset
 from pydicom.sr.codedict import codes
-from pydicom.uid import JPEGLSLossless, ExplicitVRLittleEndian
+from pydicom.uid import (
+    JPEGLSLossless,
+    ExplicitVRLittleEndian,
+    JPEG2000Lossless,
+)
 
 from idc_annotation_conversion.rms import metadata_config
 
@@ -177,6 +181,7 @@ def convert_segmentation(
     segmentation_type: Union[hd.seg.SegmentationTypeValues, str],
     dimension_organization_type: Union[hd.DimensionOrganizationTypeValues, str],
     workers: int = 0,
+    include_lut: bool = False,
 ) -> List[hd.seg.Segmentation]:
     """Store segmentation masks as DICOM segmentations.
 
@@ -201,6 +206,10 @@ def convert_segmentation(
         Dimension organization type of the output segmentations.
     workers: int
         Number of workers to use for frame compression.
+    include_lut: bool, optional
+        Whether to include a LUT transformation in the segmentation to store as
+        a PALETTE COLOR image. Ignored if segmentation_type is not LABELMAP.
+
 
     Returns
     -------
@@ -233,11 +242,17 @@ def convert_segmentation(
         dimension_organization_type
     )
 
+    if include_lut and segmentation_type == hd.seg.SegmentationTypeValues.LABELMAP:
+        lut_transform = metadata_config.labelmap_lut
+    else:
+        lut_transform = None
+
     # Compression method depends on what is possible given the chosen
     # segmentation type
     transfer_syntax_uid = {
-        hd.seg.SegmentationTypeValues.BINARY: ExplicitVRLittleEndian,
+        hd.seg.SegmentationTypeValues.BINARY: JPEG2000Lossless,
         hd.seg.SegmentationTypeValues.FRACTIONAL: JPEGLSLossless,
+        hd.seg.SegmentationTypeValues.LABELMAP: JPEGLSLossless,
     }[segmentation_type]
 
     omit_empty_frames = dimension_organization_type.value != "TILED_FULL"
@@ -245,7 +260,7 @@ def convert_segmentation(
     if segmentation_type == hd.seg.SegmentationTypeValues.FRACTIONAL:
         # Add frame axis and remove background class
         mask = segmentation_array[None, :, :, 1:]
-    elif segmentation_type == hd.seg.SegmentationTypeValues.BINARY:
+    else:
         mask = np.argmax(segmentation_array, axis=2).astype(np.uint8)
 
     if create_pyramid:
@@ -267,6 +282,7 @@ def convert_segmentation(
             omit_empty_frames=omit_empty_frames,
             workers=workers,
             series_description=metadata_config.segmentation_series_description_by_type[segmentation_type],
+            palette_color_lut_transformation=lut_transform,
         )
         seg_time = time() - seg_start_time
         logging.info(f"Created DICOM Segmentations in {seg_time:.1f}s.")
@@ -292,6 +308,7 @@ def convert_segmentation(
             omit_empty_frames=omit_empty_frames,
             workers=workers,
             series_description=metadata_config.segmentation_series_description_by_type[segmentation_type],
+            palette_color_lut_transformation=lut_transform,
         )
         segmentations = [segmentation]
         seg_time = time() - seg_start_time

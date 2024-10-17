@@ -323,6 +323,16 @@ def convert_xml_annotations(
     ),
 )
 @click.option(
+    "--include-lut/--no-include-lut",
+    "-l/-L",
+    default=False,
+    show_default=True,
+    help=(
+        "Include a LUT transformation in a LABELMAP image to create palette "
+        "color image. Ignored if segmentation_type is not LABELMAP."
+    ),
+)
+@click.option(
     "--excluded-cases",
     "-e",
     multiple=True,
@@ -338,6 +348,7 @@ def convert_segmentations(
     workers: int,
     store_wsi_dicom: bool,
     excluded_cases: Optional[List[str]] = None,
+    include_lut: bool = False,
 ):
     """Convert RMS model segmentation masks to DICOM segmentations."""
     logging.basicConfig(level=logging.INFO)
@@ -429,6 +440,7 @@ def convert_segmentations(
             segmentation_type=segmentation_type,
             dimension_organization_type=dimension_organization_type,
             workers=workers,
+            include_lut=include_lut,
         )
 
         # Store objects to filesystem
