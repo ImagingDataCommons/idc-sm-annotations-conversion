@@ -95,8 +95,8 @@ is_verified = False
 segmentation_channel_order = [
     "NECROSIS",
     "STROMA",
-    "ARMS",
     "ERMS",
+    "ARMS",
 ]
 algorithm_identification = hd.AlgorithmIdentificationSequence(
     name="Rhabdomyosarcoma Pathology CNN AI Segmentation Model",
