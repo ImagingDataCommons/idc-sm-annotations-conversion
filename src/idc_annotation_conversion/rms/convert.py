@@ -26,7 +26,7 @@ def convert_xml_annotation(
     use_scoord3d: bool = True,
     include_measurements: bool = False,
     create_segmentation: bool = True,
-    segmentation_type: Union[hd.seg.SegmentationTypeValues, str] = hd.seg.SegmentationTypeValues.LABELMAP,
+    segmentation_type: Union[hd.seg.SegmentationTypeValues, str] = hd.seg.SegmentationTypeValues.BINARY,
     dimension_organization_type: Union[hd.DimensionOrganizationTypeValues, str] = hd.DimensionOrganizationTypeValues.TILED_FULL,
     workers: int = 0,
     include_lut: bool = False,

@@ -157,7 +157,7 @@ def find_series(
         [v.name for v in hd.seg.SegmentationTypeValues],
         case_sensitive=False,
     ),
-    default="LABELMAP",
+    default="BINARY",
     show_default=True,
     help="Segmentation type for the Segmentation Image.",
 )
