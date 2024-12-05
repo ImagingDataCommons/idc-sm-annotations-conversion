@@ -241,7 +241,7 @@ def convert_xml_annotation(
         # Compression method depends on what is possible given the chosen
         # segmentation type
         transfer_syntax_uid = {
-            hd.seg.SegmentationTypeValues.BINARY: JPEG2000Lossless,
+            hd.seg.SegmentationTypeValues.BINARY: ExplicitVRLittleEndian,
             hd.seg.SegmentationTypeValues.FRACTIONAL: JPEGLSLossless,
             hd.seg.SegmentationTypeValues.LABELMAP: JPEGLSLossless,
         }[segmentation_type]
@@ -353,7 +353,7 @@ def convert_segmentation(
     # Compression method depends on what is possible given the chosen
     # segmentation type
     transfer_syntax_uid = {
-        hd.seg.SegmentationTypeValues.BINARY: JPEG2000Lossless,
+        hd.seg.SegmentationTypeValues.BINARY: ExplicitVRLittleEndian,
         hd.seg.SegmentationTypeValues.FRACTIONAL: JPEGLSLossless,
         hd.seg.SegmentationTypeValues.LABELMAP: JPEGLSLossless,
     }[segmentation_type]
