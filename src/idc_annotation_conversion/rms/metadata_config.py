@@ -109,6 +109,11 @@ segmentation_series_description_by_type = {
     hd.seg.SegmentationTypeValues.BINARY: "AI Model Tissue Segmentations (Binarized)",
     hd.seg.SegmentationTypeValues.LABELMAP: "AI Model Tissue Segmentations (Labelmap)",
 }
+manual_segmentation_series_description_by_type = {
+    hd.seg.SegmentationTypeValues.FRACTIONAL: "Manual Tissue Segmentations",
+    hd.seg.SegmentationTypeValues.BINARY: "Manual Tissue Segmentations (Binarized)",
+    hd.seg.SegmentationTypeValues.LABELMAP: "Manual Tissue Segmentations (Labelmap)",
+}
 seg_manufacturer = "NCI/FNLCR"
 seg_manufacturer_model_name = "FNLCR_IVG_RMS_iou_0.7343_0.7175_epoch_60"
 

@@ -5,7 +5,7 @@ import os
 from io import BytesIO
 from itertools import islice
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Union
 from xml.etree import ElementTree
 
 import click
@@ -13,7 +13,6 @@ from google.cloud import bigquery, storage
 import highdicom as hd
 import numpy as np
 import pandas as pd
-from PIL import Image
 
 from idc_annotation_conversion import cloud_config, cloud_io
 from idc_annotation_conversion.rms.convert import (
@@ -62,7 +61,7 @@ def find_series(
             TotalPixelMatrixColumns,
             Cast(NumberOfFrames AS int) AS NumberOfFrames
         FROM
-            bigquery-public-data.idc_v16.dicom_all
+            bigquery-public-data.idc_v20.dicom_all
         WHERE
             ContainerIdentifier LIKE "{container_prefix}%"
             AND collection_id = "rms_mutation_prediction"
@@ -137,6 +136,48 @@ def find_series(
     multiple=True,
     help="Container IDs (before underscore) to skip. Multiple may be provided",
 )
+@click.option(
+    "--dimension-organization-type",
+    "-T",
+    type=click.Choice(
+        [v.name for v in hd.DimensionOrganizationTypeValues],
+        case_sensitive=False,
+    ),
+    default="TILED_FULL",
+    show_default=True,
+    help=(
+        "Dimension organization type for segmentations. TILED_FULL (default) "
+        "or TILED_SPARSE."
+    ),
+)
+@click.option(
+    "--segmentation-type",
+    "-t",
+    type=click.Choice(
+        [v.name for v in hd.seg.SegmentationTypeValues],
+        case_sensitive=False,
+    ),
+    default="LABELMAP",
+    show_default=True,
+    help="Segmentation type for the Segmentation Image.",
+)
+@click.option(
+    "--workers",
+    "-w",
+    type=int,
+    default=0,
+    help="Numbers of workers to use for frame compression.",
+)
+@click.option(
+    "--include-lut/--no-include-lut",
+    "-l/-L",
+    default=False,
+    show_default=True,
+    help=(
+        "Include a LUT transformation in a LABELMAP image to create palette "
+        "color image. Ignored if segmentation_type is not LABELMAP."
+    ),
+)
 def convert_xml_annotations(
     number: Optional[int],
     output_dir: Optional[Path],
@@ -147,6 +188,11 @@ def convert_xml_annotations(
     use_scoord3d: bool,
     include_measurements: bool,
     excluded_cases: Optional[List[str]] = None,
+    create_segmentation: bool = True,
+    segmentation_type: Union[hd.seg.SegmentationTypeValues, str] = hd.seg.SegmentationTypeValues.LABELMAP,
+    dimension_organization_type: Union[hd.DimensionOrganizationTypeValues, str] = hd.DimensionOrganizationTypeValues.TILED_FULL,
+    workers: int = 0,
+    include_lut: bool = False,
 ):
     """Convert RMS XML annotations to DICOM SRs."""
     logging.basicConfig(level=logging.INFO)
@@ -205,14 +251,17 @@ def convert_xml_annotations(
             for _, row in selection_df.iterrows()
         ]
 
-        logging.info("Creating SR.")
-        sr_dcm = convert_xml_annotation(
+        sr_dcm, seg_dcms = convert_xml_annotation(
             xml_root,
             wsi_dcm,
             use_scoord3d=use_scoord3d,
             include_measurements=include_measurements,
+            create_segmentation=create_segmentation,
+            segmentation_type=segmentation_type,
+            dimension_organization_type=dimension_organization_type,
+            workers=workers,
+            include_lut=include_lut,
         )
-        logging.info("SR created.")
 
         # Store objects to bucket
         if store_bucket:
@@ -242,12 +291,28 @@ def convert_xml_annotations(
                 sr_blob_name,
             )
 
+            if len(seg_dcms) > 0:
+                for i, seg_dcm in enumerate(seg_dcms):
+                    seg_blob_name = f"{blob_root}{container_id}_seg_{i}.dcm"
+                    logging.info(f"Uploading SEG to {seg_blob_name}.")
+                    cloud_io.write_dataset_to_blob(
+                        seg_dcm,
+                        output_bucket_obj,
+                        seg_blob_name,
+                    )
+
         # Store objects to filesystem
         if output_dir is not None:
             sr_path = output_dir / f"{container_id}_sr.dcm"
 
             logging.info(f"Writing sr to {str(sr_path)}.")
             sr_dcm.save_as(sr_path)
+
+            if len(seg_dcms) > 0:
+                for i, seg_dcm in enumerate(seg_dcms):
+                    seg_path = output_dir / f"{container_id}_seg_{i}.dcm"
+                    logging.info(f"Writing seg to {str(seg_path)}.")
+                    seg_dcm.save_as(seg_path)
 
             if store_wsi_dicom:
                 for i, dcm in enumerate(wsi_dcm):

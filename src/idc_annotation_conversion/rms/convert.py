@@ -14,6 +14,8 @@ from pydicom.uid import (
     ExplicitVRLittleEndian,
     JPEG2000Lossless,
 )
+from rasterio.features import rasterize
+from shapely.geometry.polygon import Polygon
 
 from idc_annotation_conversion.rms import metadata_config
 
@@ -23,6 +25,11 @@ def convert_xml_annotation(
     source_images: List[Dataset],
     use_scoord3d: bool = True,
     include_measurements: bool = False,
+    create_segmentation: bool = True,
+    segmentation_type: Union[hd.seg.SegmentationTypeValues, str] = hd.seg.SegmentationTypeValues.LABELMAP,
+    dimension_organization_type: Union[hd.DimensionOrganizationTypeValues, str] = hd.DimensionOrganizationTypeValues.TILED_FULL,
+    workers: int = 0,
+    include_lut: bool = False,
 ) -> hd.sr.Comprehensive3DSR:
     """Convert an ImageScope XML annotation to a DICOM SR.
 
@@ -36,6 +43,19 @@ def convert_xml_annotation(
         Use SCOORD3D coordinates to store points.
     include_measurements: bool
         Include the measurements of length and area from the XML.
+    create_segmentation: bool
+        Whether to create a (raster) segmentation mask from the (vector)
+        contour annotations.
+    segmentation_type: Union[hd.seg.SegmentationTypeValues, str], optional
+        Segmentation type (BINARY or FRACTIONAL) for the Segmentation Image
+        (if any).
+    dimension_organization_type: Union[hd.DimensionOrganizationTypeValues, str], optional
+        Dimension organization type of the output segmentations.
+    workers: int
+        Number of workers to use for frame compression in segmentations.
+    include_lut: bool, optional
+        Whether to include a LUT transformation in the segmentation to store as
+        a PALETTE COLOR image. Ignored if segmentation_type is not LABELMAP.
 
     Returns
     -------
@@ -59,8 +79,10 @@ def convert_xml_annotation(
         image_orientation=source_image.ImageOrientationSlide,
         pixel_spacing=(pixel_spacing_mm, pixel_spacing_mm),
     )
+    container_id = source_images[0].ContainerIdentifier
 
     roi_groups = []
+    polygons = []
 
     for annotation in xml_annotation:
         assert annotation.tag == "Annotation"
@@ -91,6 +113,11 @@ def convert_xml_annotation(
             tracking_identifier = hd.sr.TrackingIdentifier(hd.UID(), region_id)
             finding_str = region.attrib["Text"].upper()
             finding_type, finding_category = metadata_config.finding_codes[finding_str]
+
+            mask_value = metadata_config.segmentation_channel_order.index(finding_str) + 1
+            polygons.append(
+                (Polygon(graphic_data), mask_value)
+            )
 
             if use_scoord3d:
                 graphic_data_3d = transformer(graphic_data)
@@ -152,6 +179,7 @@ def convert_xml_annotation(
         referenced_images=source_images,
     )
 
+    logging.info("Creating SR.")
     sr = hd.sr.Comprehensive3DSR(
         evidence=source_images,
         content=measurement_report,
@@ -170,8 +198,83 @@ def convert_xml_annotation(
         institution_name=metadata_config.institution_name,
         institutional_department_name=metadata_config.institutional_department_name,
     )
+    logging.info("SR created.")
 
-    return sr
+    if create_segmentation:
+        im_shape = (
+            source_image.TotalPixelMatrixRows,
+            source_image.TotalPixelMatrixColumns
+        )
+
+        segmentation_mask = rasterize(
+            polygons,
+            out_shape=im_shape,
+            dtype=np.uint8
+        )
+
+        segment_descriptions = []
+        for (number, label) in enumerate(
+            metadata_config.segmentation_channel_order,
+            start=1
+        ):
+            desc = hd.seg.SegmentDescription(
+                segment_number=number,
+                segment_label=label,
+                segmented_property_category=metadata_config.finding_codes[label][1],
+                segmented_property_type=metadata_config.finding_codes[label][0],
+                algorithm_type=hd.seg.SegmentAlgorithmTypeValues.MANUAL,
+                tracking_id=f"{container_id}-{label}",
+                tracking_uid=hd.UID(),
+            )
+            segment_descriptions.append(desc)
+
+        segmentation_type = hd.seg.SegmentationTypeValues(segmentation_type)
+        dimension_organization_type = hd.DimensionOrganizationTypeValues(
+            dimension_organization_type
+        )
+
+        if include_lut and segmentation_type == hd.seg.SegmentationTypeValues.LABELMAP:
+            lut_transform = metadata_config.labelmap_lut
+        else:
+            lut_transform = None
+
+        # Compression method depends on what is possible given the chosen
+        # segmentation type
+        transfer_syntax_uid = {
+            hd.seg.SegmentationTypeValues.BINARY: JPEG2000Lossless,
+            hd.seg.SegmentationTypeValues.FRACTIONAL: JPEGLSLossless,
+            hd.seg.SegmentationTypeValues.LABELMAP: JPEGLSLossless,
+        }[segmentation_type]
+
+        omit_empty_frames = dimension_organization_type.value != "TILED_FULL"
+
+        logging.info("Creating DICOM Segmentations")
+        seg_start_time = time()
+        segmentations = hd.seg.pyramid.create_segmentation_pyramid(
+            source_images=source_images,
+            pixel_arrays=[segmentation_mask],
+            segmentation_type=segmentation_type,
+            segment_descriptions=segment_descriptions,
+            series_instance_uid=hd.UID(),
+            series_number=25,
+            manufacturer=metadata_config.sr_manufacturer,
+            manufacturer_model_name=metadata_config.sr_manufacturer_model_name,
+            software_versions=metadata_config.software_versions,
+            device_serial_number=metadata_config.device_serial_number,
+            transfer_syntax_uid=transfer_syntax_uid,
+            dimension_organization_type=dimension_organization_type,
+            omit_empty_frames=omit_empty_frames,
+            workers=workers,
+            series_description=metadata_config.manual_segmentation_series_description_by_type[segmentation_type],
+            palette_color_lut_transformation=lut_transform,
+        )
+        seg_time = time() - seg_start_time
+        logging.info(f"Created DICOM Segmentations in {seg_time:.1f}s.")
+    else:
+        segmentations = []
+
+
+    return sr, segmentations
 
 
 def convert_segmentation(
