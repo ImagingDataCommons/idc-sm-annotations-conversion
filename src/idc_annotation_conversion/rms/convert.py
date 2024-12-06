@@ -366,7 +366,7 @@ def convert_segmentation(
     else:
         mask = np.argmax(segmentation_array, axis=2).astype(np.uint8)
 
-    if create_pyramid:
+    if create_pyramid and len(source_images) > 1:
         logging.info("Creating DICOM Segmentations")
         seg_start_time = time()
         segmentations = hd.seg.pyramid.create_segmentation_pyramid(
