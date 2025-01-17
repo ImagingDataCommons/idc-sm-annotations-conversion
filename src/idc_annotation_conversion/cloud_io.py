@@ -4,6 +4,8 @@ from io import BytesIO
 from google.cloud import storage
 
 import pydicom
+import numpy as np
+from PIL import Image
 
 
 def read_dataset_from_blob(
@@ -61,3 +63,29 @@ def write_dataset_to_blob(
         dataset.save_as(buf)
         buf.seek(0)
         blob.upload_from_file(buf)
+
+
+def read_image_from_blob(
+    bucket: storage.Bucket,
+    blob_name: str,
+) -> np.ndarray:
+    """Read a non-DICOM image from a bucket.
+
+    Parameters
+    ----------
+    bucket: storage.Bucket
+        Bucket object where the blob is stored. Should be some image file in a
+        format supported by PIL (e.g. JPEG, PNG, etc).
+    blob_name: str
+        Name of the blob within the bucket.
+
+    Returns
+    -------
+    numpy.ndarray
+        Dataset loaded from the specified blob.
+
+    """
+    blob = bucket.get_blob(blob_name)
+    dcm_bytes = blob.download_as_bytes()
+    im = np.array(Image.open(BytesIO(dcm_bytes)))
+    return im
