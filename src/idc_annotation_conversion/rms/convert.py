@@ -285,6 +285,7 @@ def convert_segmentation(
     workers: int = 0,
     include_lut: bool = False,
     transfer_syntax: Optional[str] = None,
+    series_description: Optional[str] = None,
 ) -> List[hd.seg.Segmentation]:
     """Store segmentation masks as DICOM segmentations.
 
@@ -318,6 +319,9 @@ def convert_segmentation(
         ExplicitVRLittleEndian will be used for BINARY segmentations, and
         JPEG2000Lossless will be used for LABELMAP and FRACTIONAL
         segmentations.
+    series_description: Optional[str], optional
+        Series description to use for the generated files. If not provided, an
+        appropriate default from the metadata_config file is used.
 
     Returns
     -------
@@ -371,6 +375,12 @@ def convert_segmentation(
                 f"No such transfer syntax: {transfer_syntax}."
             ) from e
 
+    if series_description is None:
+        series_description = (
+            metadata_config
+            .segmentation_series_description_by_type[segmentation_type]
+        )
+
     omit_empty_frames = dimension_organization_type.value != "TILED_FULL"
 
     if segmentation_type == hd.seg.SegmentationTypeValues.FRACTIONAL:
@@ -397,7 +407,7 @@ def convert_segmentation(
             dimension_organization_type=dimension_organization_type,
             omit_empty_frames=omit_empty_frames,
             workers=workers,
-            series_description=metadata_config.segmentation_series_description_by_type[segmentation_type],
+            series_description=series_description,
             palette_color_lut_transformation=lut_transform,
         )
         seg_time = time() - seg_start_time
@@ -423,7 +433,7 @@ def convert_segmentation(
             dimension_organization_type=dimension_organization_type,
             omit_empty_frames=omit_empty_frames,
             workers=workers,
-            series_description=metadata_config.segmentation_series_description_by_type[segmentation_type],
+            series_description=series_description,
             palette_color_lut_transformation=lut_transform,
         )
         segmentations = [segmentation]

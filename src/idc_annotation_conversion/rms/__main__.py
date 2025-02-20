@@ -411,6 +411,14 @@ def convert_xml_annotations(
         "'JPEG2000Lossless' or 'ExplcitVRLittleEndian'."
     ),
 )
+@click.option(
+    "--series-description",
+    "-s",
+    help=(
+        "Custom series description to include in the files. If not specified "
+        "the predefined value in the metadata config file is used."
+    ),
+)
 def convert_segmentations(
     output_dir: Optional[Path],
     output_bucket: Optional[str],
@@ -423,6 +431,7 @@ def convert_segmentations(
     excluded_cases: Optional[List[str]] = None,
     include_lut: bool = False,
     transfer_syntax: Optional[str] = None,
+    series_description: Optional[str] = None,
 ):
     """Convert RMS model segmentation masks to DICOM segmentations."""
     logging.basicConfig(level=logging.INFO)
@@ -430,6 +439,7 @@ def convert_segmentations(
     # Suppress highdicom logging (very talkative)
     logging.getLogger("highdicom.base").setLevel(logging.WARNING)
     logging.getLogger("highdicom.seg.sop").setLevel(logging.WARNING)
+    logging.getLogger("openjpeg.encode").setLevel(logging.WARNING)
 
     if output_dir is not None:
         output_dir.mkdir(exist_ok=True)
@@ -516,6 +526,7 @@ def convert_segmentations(
             workers=workers,
             include_lut=include_lut,
             transfer_syntax=transfer_syntax,
+            series_description=series_description,
         )
 
         # Store objects to filesystem
