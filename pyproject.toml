@@ -8,13 +8,13 @@ packages = [{include = "idc_annotation_conversion", from = "src" }]
 
 [tool.poetry.dependencies]
 python = "^3.10"
-numpy = "<2.0.0"
+numpy = ">=2.0.0"
 pydicom = "^3.0.1"
-highdicom = "^0.25.0"
+highdicom = { version = "^0.25.0", extras = ["libjpeg"] }
 google-cloud-bigquery = "^3.6.0"
 google-cloud-storage = "^2.7.0"
 google-auth = "^2.16.2"
-pandas = "^1.5.3"
+pandas = ">=2.0.0"
 db-dtypes = "^1.0.5"
 shapely = "^2.0.1"
 click = "^8.1.3"

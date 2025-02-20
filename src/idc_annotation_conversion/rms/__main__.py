@@ -403,6 +403,14 @@ def convert_xml_annotations(
     multiple=True,
     help="Container IDs (before underscore) to skip. Multiple may be provided",
 )
+@click.option(
+    "--transfer-syntax",
+    "-c",
+    help=(
+        "Name of transfer syntex to use for compression, e.g. "
+        "'JPEG2000Lossless' or 'ExplcitVRLittleEndian'."
+    ),
+)
 def convert_segmentations(
     output_dir: Optional[Path],
     output_bucket: Optional[str],
@@ -414,6 +422,7 @@ def convert_segmentations(
     store_wsi_dicom: bool,
     excluded_cases: Optional[List[str]] = None,
     include_lut: bool = False,
+    transfer_syntax: Optional[str] = None,
 ):
     """Convert RMS model segmentation masks to DICOM segmentations."""
     logging.basicConfig(level=logging.INFO)
@@ -506,6 +515,7 @@ def convert_segmentations(
             dimension_organization_type=dimension_organization_type,
             workers=workers,
             include_lut=include_lut,
+            transfer_syntax=transfer_syntax,
         )
 
         # Store objects to filesystem

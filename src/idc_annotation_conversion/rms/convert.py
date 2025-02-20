@@ -1,7 +1,7 @@
 """Functions to convert single annotations into SRs"""
 import logging
 from time import time
-from typing import List, Union
+from typing import List, Union, Optional
 import xml
 
 import numpy as np
@@ -10,7 +10,6 @@ import pydicom
 from pydicom import Dataset
 from pydicom.sr.codedict import codes
 from pydicom.uid import (
-    JPEGLSLossless,
     ExplicitVRLittleEndian,
     JPEG2000Lossless,
 )
@@ -242,8 +241,8 @@ def convert_xml_annotation(
         # segmentation type
         transfer_syntax_uid = {
             hd.seg.SegmentationTypeValues.BINARY: ExplicitVRLittleEndian,
-            hd.seg.SegmentationTypeValues.FRACTIONAL: JPEGLSLossless,
-            hd.seg.SegmentationTypeValues.LABELMAP: JPEGLSLossless,
+            hd.seg.SegmentationTypeValues.FRACTIONAL: JPEG2000Lossless,
+            hd.seg.SegmentationTypeValues.LABELMAP: JPEG2000Lossless,
         }[segmentation_type]
 
         omit_empty_frames = dimension_organization_type.value != "TILED_FULL"
@@ -285,6 +284,7 @@ def convert_segmentation(
     dimension_organization_type: Union[hd.DimensionOrganizationTypeValues, str],
     workers: int = 0,
     include_lut: bool = False,
+    transfer_syntax: Optional[str] = None,
 ) -> List[hd.seg.Segmentation]:
     """Store segmentation masks as DICOM segmentations.
 
@@ -312,7 +312,12 @@ def convert_segmentation(
     include_lut: bool, optional
         Whether to include a LUT transformation in the segmentation to store as
         a PALETTE COLOR image. Ignored if segmentation_type is not LABELMAP.
-
+    transfer_syntax: Optional[str], optional
+        Name (as found in the pydicom.uid module) of a transfer syntax to use.
+        E.g. "ExplicitVRLittleEndian", "JPEG2000Lossless". If not specified,
+        ExplicitVRLittleEndian will be used for BINARY segmentations, and
+        JPEG2000Lossless will be used for LABELMAP and FRACTIONAL
+        segmentations.
 
     Returns
     -------
@@ -350,13 +355,21 @@ def convert_segmentation(
     else:
         lut_transform = None
 
-    # Compression method depends on what is possible given the chosen
-    # segmentation type
-    transfer_syntax_uid = {
-        hd.seg.SegmentationTypeValues.BINARY: ExplicitVRLittleEndian,
-        hd.seg.SegmentationTypeValues.FRACTIONAL: JPEGLSLossless,
-        hd.seg.SegmentationTypeValues.LABELMAP: JPEGLSLossless,
-    }[segmentation_type]
+    if transfer_syntax is None:
+        # Compression method depends on what is possible given the chosen
+        # segmentation type
+        transfer_syntax_uid = {
+            hd.seg.SegmentationTypeValues.BINARY: ExplicitVRLittleEndian,
+            hd.seg.SegmentationTypeValues.FRACTIONAL: JPEG2000Lossless,
+            hd.seg.SegmentationTypeValues.LABELMAP: JPEG2000Lossless,
+        }[segmentation_type]
+    else:
+        try:
+            transfer_syntax_uid = getattr(pydicom.uid, transfer_syntax)
+        except AttributeError as e:
+            raise AttributeError(
+                f"No such transfer syntax: {transfer_syntax}."
+            ) from e
 
     omit_empty_frames = dimension_organization_type.value != "TILED_FULL"
 
