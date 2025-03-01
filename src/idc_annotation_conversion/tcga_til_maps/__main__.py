@@ -147,6 +147,16 @@ def run(
     """Convert TCGA tumor infiltrating lymphocyte (TIL) maps to DICOM
     segmentations.
 
+    This routine is for the earlier set of TIL maps described here:
+
+    https://www.cancerimagingarchive.net/analysis-result/til-wsi-tcga/
+
+    relating to this publication:
+
+    Saltz, Joel, et al. "Spatial organization and molecular correlation of
+    tumor-infiltrating lymphocytes using deep learning on pathology images."
+    Cell reports 23.1 (2018): 181-193.
+
     Images and annotations are automatically pulled down from cloud buckets as
     required.
 
@@ -305,6 +315,17 @@ def run(
     logging.info("Printing errors")
     for msg in errors:
         logging.info(msg)
+
+
+def run_2022():
+    """Convert TIL maps from the later, 2022 paper:
+
+    Abousamra, S., Gupta, R., Hou, L., Batiste, R., Zhao, T., Shankar, A., Saltz,
+    J. (2022). Deep learning-based mapping of tumor infiltrating lymphocytes in
+    whole slide images of 23 types of cancer. Frontiers in oncology, 11, 806603.
+
+    """
+
 
 
 if __name__ == "__main__":
