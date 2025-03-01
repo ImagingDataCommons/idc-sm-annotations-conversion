@@ -1,5 +1,6 @@
 """Main conversion process for the TCGA TIL Maps project."""
 import datetime
+from concurrent.futures import ProcessPoolExecutor
 import logging
 from pathlib import Path
 import os
@@ -41,6 +42,107 @@ COLLECTIONS = [
 ]
 
 
+def run_blob(
+    blob_name: str,
+    dimension_organization_type: str,
+    segmentation_type: str,
+    include_lut: bool = True,
+    output_dir: Path | None = None,
+    store_wsi_dicom: bool = False,
+    output_bucket: str | None = None,
+):
+    error: str | None = None
+    output_client = storage.Client(project=cloud_config.OUTPUT_GCP_PROJECT_ID)
+
+    if output_bucket is not None:
+        output_bucket_obj = output_client.bucket(output_bucket)
+    else:
+        output_bucket_obj = None
+
+    bq_client = bigquery.Client(cloud_config.GCP_PROJECT_ID)
+    storage_client = storage.Client(project=cloud_config.GCP_PROJECT_ID)
+    im_bucket = storage_client.bucket(IMAGE_BUCKET)
+    ann_bucket = storage_client.bucket(ANNOTATION_BUCKET)
+
+    container_id = blob_name.split('/')[-1].replace('.png', '')
+    logging.info(f"Running on container ID {container_id}")
+
+    mask = cloud_io.read_image_from_blob(
+        ann_bucket,
+        blob_name
+    )
+    logging.info("Pulled mask")
+
+    selection_query = f"""
+        SELECT
+            gcs_url,
+            CAST(NumberOfFrames AS int) AS NumberOfFrames
+        FROM
+            bigquery-public-data.idc_current.dicom_all
+        WHERE
+            ContainerIdentifier='{container_id}' and SamplesPerPixel = 3
+        ORDER BY
+            NumberOfFrames DESC
+    """
+    selection_result = bq_client.query(selection_query)
+    selection_df = selection_result.result().to_dataframe()
+    if len(selection_df) == 0:
+        error = f"ERROR cannot find image: {container_id}"
+        logging.error(error)
+        return error
+
+    if len(selection_df) > 1:
+        # Check that there aren't multiple options
+        if (
+            selection_df.iloc[0].NumberOfFrames ==
+            selection_df.iloc[1].NumberOfFrames
+        ):
+            error = f"WARNING multiple images: {container_id}"
+            logging.warning(error)
+
+    url = selection_df.iloc[0].gcs_url
+    blob_name = "/".join(url.split("/")[3:])
+
+    wsi_dcm = cloud_io.read_dataset_from_blob(
+        im_bucket,
+        blob_name,
+        stop_before_pixels=not store_wsi_dicom,
+    )
+    logging.info("Pulled WSI image")
+
+    seg = convert_segmentation(
+        mask,
+        wsi_dcm,
+        dimension_organization_type=dimension_organization_type,
+        segmentation_type=segmentation_type,
+        include_lut=include_lut,
+    )
+
+    # Store objects to filesystem
+    if output_dir is not None:
+        seg_path = output_dir / f"{container_id}_seg.dcm"
+
+        logging.info(f"Writing segmentation to {str(seg_path)}.")
+        seg.save_as(seg_path)
+
+    if store_wsi_dicom:
+        dcm_path = output_dir / f"{container_id}_im.dcm"
+        wsi_dcm.save_as(dcm_path)
+
+    # Store to bucket
+    if output_bucket_obj is not None:
+        seg_blob_name = f"{container_id}_seg.dcm"
+
+        logging.info("Writing segmentation to output bucket.")
+        cloud_io.write_dataset_to_blob(
+            seg,
+            output_bucket_obj,
+            seg_blob_name,
+        )
+
+    return error
+
+
 @click.command()
 @click.option(
     "-c",
@@ -62,6 +164,13 @@ COLLECTIONS = [
     "-n",
     type=int,
     help="Number of annotations to process. All by default.",
+)
+@click.option(
+    "--workers",
+    "-w",
+    type=int,
+    default=0,
+    help="Number of worker processes.",
 )
 @click.option(
     "--output-dir",
@@ -135,7 +244,7 @@ def run(
     collections: Optional[list[str]],
     number: Optional[int],
     output_dir: Optional[Path],
-    output_bucket: str,
+    output_bucket: str | None,
     store_bucket: bool,
     store_wsi_dicom: bool,
     segmentation_type: str,
@@ -143,6 +252,7 @@ def run(
     blob_filter: Optional[str] = None,
     keep_existing: bool = False,
     include_lut: bool = True,
+    workers: int = 0,
 ):
     """Convert TCGA tumor infiltrating lymphocyte (TIL) maps to DICOM
     segmentations.
@@ -175,7 +285,6 @@ def run(
 
     # Setup project and authenticate
     os.environ["GCP_PROJECT_ID"] = cloud_config.GCP_PROJECT_ID
-    bq_client = bigquery.Client(cloud_config.GCP_PROJECT_ID)
 
     if keep_existing and not store_bucket:
         raise ValueError("keep_existing requires store_bucket")
@@ -183,7 +292,6 @@ def run(
     # Access bucket containing annotations
     storage_client = storage.Client(project=cloud_config.GCP_PROJECT_ID)
     output_client = storage.Client(project=cloud_config.OUTPUT_GCP_PROJECT_ID)
-    im_bucket = storage_client.bucket(IMAGE_BUCKET)
     ann_bucket = storage_client.bucket(ANNOTATION_BUCKET)
     output_bucket_obj = None
     if store_bucket:
@@ -198,6 +306,8 @@ def run(
             output_bucket_obj.create(
                 location=cloud_config.GCP_DEFAULT_LOCATION
             )
+    else:
+        output_bucket = None
 
     # Create output directory
     if output_dir is not None:
@@ -239,82 +349,41 @@ def run(
 
     errors = []
 
-    for blob in to_process:
-        container_id = blob.name.split('/')[-1].replace('.png', '')
-        logging.info(f"Running on container ID {container_id}")
-
-        mask = cloud_io.read_image_from_blob(
-            ann_bucket,
-            blob.name
-        )
-        logging.info("Pulled mask")
-
-        selection_query = f"""
-            SELECT
-                gcs_url,
-                CAST(NumberOfFrames AS int) AS NumberOfFrames
-            FROM
-                bigquery-public-data.idc_current.dicom_all
-            WHERE
-                ContainerIdentifier='{container_id}' and SamplesPerPixel = 3
-            ORDER BY
-                NumberOfFrames DESC
-        """
-        selection_result = bq_client.query(selection_query)
-        selection_df = selection_result.result().to_dataframe()
-        if len(selection_df) == 0:
-            msg = f"ERROR cannot find image: {container_id}"
-            errors.append(msg)
-            logging.error(msg)
-        if len(selection_df) > 1:
-            # Check that there aren't multiple options
-            if (
-                selection_df.iloc[0].NumberOfFrames ==
-                selection_df.iloc[1].NumberOfFrames
-            ):
-                msg = f"WARNING multiple images: {container_id}"
-                logging.warning(msg)
-                errors.append(msg)
-
-        url = selection_df.iloc[0].gcs_url
-        blob_name = "/".join(url.split("/")[3:])
-
-        wsi_dcm = cloud_io.read_dataset_from_blob(im_bucket, blob_name)
-        logging.info("Pulled WSI image")
-
-        seg = convert_segmentation(
-            mask,
-            wsi_dcm,
-            dimension_organization_type=dimension_organization_type,
-            segmentation_type=segmentation_type,
-            include_lut=include_lut,
-        )
-
-        # Store objects to filesystem
-        if output_dir is not None:
-            seg_path = output_dir / f"{container_id}_seg.dcm"
-
-            logging.info(f"Writing segmentation to {str(seg_path)}.")
-            seg.save_as(seg_path)
-
-        if store_wsi_dicom:
-            dcm_path = output_dir / f"{container_id}_im.dcm"
-            wsi_dcm.save_as(dcm_path)
-
-        # Store to bucket
-        if output_bucket_obj is not None:
-            seg_blob_name = f"{container_id}_seg.dcm"
-
-            logging.info("Writing segmentation to output bucket.")
-            cloud_io.write_dataset_to_blob(
-                seg,
-                output_bucket_obj,
-                seg_blob_name,
+    if workers == 0:
+        errors = [
+            run_blob(
+                blob_name=blob.name,
+                dimension_organization_type=dimension_organization_type,
+                segmentation_type=segmentation_type,
+                include_lut=include_lut,
+                output_dir=output_dir,
+                store_wsi_dicom=store_wsi_dicom,
+                output_bucket=output_bucket,
             )
+            for blob in to_process
+        ]
+    else:
+        with ProcessPoolExecutor(workers) as pool:
+            futures = []
+            for blob in to_process:
+                fut = pool.submit(
+                    run_blob,
+                    blob_name=blob.name,
+                    dimension_organization_type=dimension_organization_type,
+                    segmentation_type=segmentation_type,
+                    include_lut=include_lut,
+                    output_dir=output_dir,
+                    store_wsi_dicom=store_wsi_dicom,
+                    output_bucket=output_bucket,
+                )
+                futures.append(fut)
+
+            errors = [fut.result() for fut in futures]
 
     logging.info("Printing errors")
     for msg in errors:
-        logging.info(msg)
+        if msg is not None:
+            logging.info(msg)
 
 
 def run_2022():

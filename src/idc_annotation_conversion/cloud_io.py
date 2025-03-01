@@ -2,6 +2,7 @@
 from io import BytesIO
 
 from google.cloud import storage
+from google.cloud.storage.fileio import BlobReader
 
 import pydicom
 import numpy as np
@@ -32,11 +33,8 @@ def read_dataset_from_blob(
 
     """
     blob = bucket.get_blob(blob_name)
-    dcm_bytes = blob.download_as_bytes()
-    dcm = pydicom.dcmread(
-        BytesIO(dcm_bytes),
-        stop_before_pixels=stop_before_pixels,
-    )
+    blob_reader = BlobReader(blob)
+    dcm = pydicom.dcmread(blob_reader, stop_before_pixels=stop_before_pixels)
     return dcm
 
 
