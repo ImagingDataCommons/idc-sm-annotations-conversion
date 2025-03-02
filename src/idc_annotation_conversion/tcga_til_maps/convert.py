@@ -100,10 +100,20 @@ def convert_segmentation(
 
     source_geometry = source_image.get_volume_geometry()
 
+    # Account for the shift in position due to the resampling, assuming that
+    # the corner of the two images remains the same
+    # TODO factor this into highdicom as resampling
+    new_pix_spacing = 0.05  # from description in paper
+    new_position = (
+        np.array(source_geometry.position) +
+        (new_pix_spacing / 2.0 - source_geometry.spacing[1] / 2.0) * np.array(source_geometry.unit_vectors()[1]) +
+        (new_pix_spacing / 2.0 - source_geometry.spacing[2] / 2.0) * np.array(source_geometry.unit_vectors()[2])
+    )
+
     mask_volume = hd.Volume.from_components(
         direction=source_geometry.direction,
-        position=source_geometry.position,
-        spacing=np.array([1.0, 0.05, 0.05]),  # TODO this is an approximation. CHECK
+        position=new_position,
+        spacing=np.array([1.0, new_pix_spacing, new_pix_spacing]),
         coordinate_system="SLIDE",
         array=mask,
         channels={ChannelDescriptor('SegmentNumber'): [1, 2]},
@@ -238,10 +248,20 @@ def convert_txt_file(
     # Create volume with correct spatial metadata
     source_geometry = source_image.get_volume_geometry()
 
+    # Account for the shift in position due to the resampling, assuming that
+    # the corner of the two images remains the same
+    # TODO factor this into highdicom as resampling
+    new_pix_spacing = 0.05  # from description in paper
+    new_position = (
+        np.array(source_geometry.position) +
+        (new_pix_spacing / 2.0 - source_geometry.spacing[1] / 2.0) * np.array(source_geometry.unit_vectors()[1]) +
+        (new_pix_spacing / 2.0 - source_geometry.spacing[2] / 2.0) * np.array(source_geometry.unit_vectors()[2])
+    )
+
     mask_volume = hd.Volume.from_components(
         direction=source_geometry.direction,
-        position=source_geometry.position,
-        spacing=np.array([1.0, 0.05, 0.05]),  # TODO this is an approximation. CHECK
+        position=new_position,
+        spacing=np.array([1.0, new_pix_spacing, new_pix_spacing]),
         coordinate_system="SLIDE",
         array=mask,
     )
