@@ -1,7 +1,7 @@
 from collections import Counter
 import logging
 from time import time
-from typing import Union, BinaryIO
+from typing import Union, TextIO
 
 from highdicom.volume import ChannelDescriptor
 import numpy as np
@@ -53,7 +53,7 @@ def convert_segmentation(
     container_id = source_image.ContainerIdentifier
     segment_descriptions = []
     for (number, label) in enumerate(
-        metadata_config.segmentation_channel_order,
+        metadata_config.segmentation_channel_order_2018,
         start=1
     ):
         desc = hd.seg.SegmentDescription(
@@ -137,24 +137,63 @@ def convert_segmentation(
 
 
 def convert_txt_file(
-    text_file: BinaryIO,
-    source_image: pydicom.Dataset,
+    text_file: TextIO,
+    source_image: hd.Image,
+    container_id: str,
     segmentation_type: Union[hd.seg.SegmentationTypeValues, str],
-    dimension_organization_type: Union[hd.DimensionOrganizationTypeValues, str],
     is_probability: bool = False,
+    dimension_organization_type: Union[
+        hd.DimensionOrganizationTypeValues,
+        str
+    ] = "TILED_FULL",
 ) -> hd.seg.Segmentation:
+    """Convert a TIL map in text file form to a DICOM segmentation.
+
+    Parameters
+    ----------
+    text_file: TextIO
+        Text file or file-like object containing the TIL map information.
+    source_image: hd.Image
+        Source image for the segmentation as a DICOM image.
+    container_id: str
+        Container identifier of the source image.
+    segmentation_type: Union[hd.seg.SegmentationTypeValues, str]
+        Segmentation type (must be FRACTIONAL if `is_probability` is True).
+    is_probability: bool = False
+        Whether the text file contains a binary or probability TIL map.
+    dimension_organization_type: Union[hd.DimensionOrganizationTypeValues, str]
+        Dimension organization type to use in the Segmentation image.
+
+    Returns
+    -------
+    highdicom.seg.Segmentation:
+        Converted segmentation image.
+
+    """
+    segmentation_type = hd.seg.SegmentationTypeValues(segmentation_type)
+    dimension_organization_type = hd.DimensionOrganizationTypeValues(
+        dimension_organization_type
+    )
 
     if is_probability:
         series_number = 22
-        segmentation_type = hd.seg.SegmentationTypeValues.FRACTIONAL
+
+        if segmentation_type != hd.seg.SegmentationTypeValues.FRACTIONAL:
+            raise ValueError("Fractional type required for fractional segmentations")
+
         transfer_syntax_uid = JPEG2000Lossless
         array_dtype = np.float64
+        series_description = metadata_config.segmentation_series_description_2022_fractional
     else:
         series_number = 21
-        segmentation_type = hd.seg.SegmentationTypeValues.BINARY
-        transfer_syntax_uid = ExplicitVRLittleEndian
+        if segmentation_type == hd.seg.SegmentationTypeValues.LABELMAP:
+            transfer_syntax_uid = JPEG2000Lossless
+        else:
+            transfer_syntax_uid = ExplicitVRLittleEndian
         array_dtype = bool
+        series_description = metadata_config.segmentation_series_description_2022_binary
 
+    omit_empty_frames = dimension_organization_type.value != "TILED_FULL"
 
     df = pd.read_csv(
         text_file,
@@ -174,8 +213,8 @@ def convert_txt_file(
     spacing_x = Counter(diff_x).most_common(1)[0][0]
     spacing_y = Counter(diff_y).most_common(1)[0][0]
 
-    assert spacing_x == x_start * 2
-    assert spacing_y == y_start * 2
+    assert abs(spacing_x // 2 - x_start) < 2
+    assert abs(spacing_y // 2 - y_start) < 2
 
     # Check the spacing is "near" regular: the gap between either neighbouring
     # pixels is either the most common spacing value, or within 1 pixel of it
@@ -187,16 +226,16 @@ def convert_txt_file(
     x_indices = ((df.x.values - x_start) / spacing_x).round().astype(np.uint32)
     y_indices = ((df.y.values - y_start) / spacing_y).round().astype(np.uint32)
 
-    shape = (y_indices.max() + 1, x_indices.max() + 1)
+    shape = (1, y_indices.max() + 1, x_indices.max() + 1)
     mask = np.zeros(shape, dtype=array_dtype)
 
     for x, y, v in zip(x_indices, y_indices, df.value):
         if not is_probability:
             v = bool(v)
 
-        mask[y, x] = bool(v)
+        mask[0, y, x] = v
 
-    # TODO create volume with correct spatial metadata
+    # Create volume with correct spatial metadata
     source_geometry = source_image.get_volume_geometry()
 
     mask_volume = hd.Volume.from_components(
@@ -206,6 +245,23 @@ def convert_txt_file(
         coordinate_system="SLIDE",
         array=mask,
     )
+
+    segment_descriptions = []
+    for (number, label) in enumerate(
+        metadata_config.segmentation_channel_order_2022,
+        start=1
+    ):
+        desc = hd.seg.SegmentDescription(
+            segment_number=number,
+            segment_label=label,
+            segmented_property_category=metadata_config.finding_codes_2022[label][0],
+            segmented_property_type=metadata_config.finding_codes_2022[label][1],
+            algorithm_type=hd.seg.SegmentAlgorithmTypeValues.AUTOMATIC,
+            algorithm_identification=metadata_config.algorithm_identification_2022,
+            tracking_id=f"{container_id}-{label}",
+            tracking_uid=hd.UID(),
+        )
+        segment_descriptions.append(desc)
 
     logging.info("Creating DICOM Segmentation")
     seg_start_time = time()
@@ -218,13 +274,14 @@ def convert_txt_file(
         series_number=series_number,
         sop_instance_uid=hd.UID(),
         instance_number=1,
-        manufacturer=metadata_config.seg_manufacturer,
-        manufacturer_model_name=metadata_config.seg_manufacturer_model_name,
+        manufacturer=metadata_config.seg_manufacturer_2022,
+        manufacturer_model_name=metadata_config.seg_manufacturer_model_name_2022,
         software_versions=metadata_config.software_versions,
         device_serial_number=metadata_config.device_serial_number,
         transfer_syntax_uid=transfer_syntax_uid,
+        series_description=series_description,
         dimension_organization_type=dimension_organization_type,
-        series_description=metadata_config.segmentation_series_description,
+        omit_empty_frames=omit_empty_frames,
     )
     seg_time = time() - seg_start_time
     logging.info(f"Created DICOM Segmentation in {seg_time:.1f}s.")

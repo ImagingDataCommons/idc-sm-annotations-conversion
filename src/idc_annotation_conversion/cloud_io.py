@@ -33,8 +33,10 @@ def read_dataset_from_blob(
 
     """
     blob = bucket.get_blob(blob_name)
-    blob_reader = BlobReader(blob)
-    dcm = pydicom.dcmread(blob_reader, stop_before_pixels=stop_before_pixels)
+    dcm = pydicom.dcmread(
+        blob.open(mode="rb"),
+        stop_before_pixels=stop_before_pixels,
+    )
     return dcm
 
 
@@ -84,6 +86,5 @@ def read_image_from_blob(
 
     """
     blob = bucket.get_blob(blob_name)
-    dcm_bytes = blob.download_as_bytes()
-    im = np.array(Image.open(BytesIO(dcm_bytes)))
+    im = np.array(Image.open(blob.open("rb")))
     return im

@@ -51,7 +51,7 @@ finding_codes_2018 = {
     ),
 }
 
-segmentation_channel_order = [
+segmentation_channel_order_2018 = [
     "TIL Negative",
     "TIL Positive",
 ]
@@ -107,12 +107,14 @@ finding_codes_2022 = {
     ),
 }
 
+segmentation_channel_order_2022 = ["TIL Positive"]
 algorithm_identification_2022 = hd.AlgorithmIdentificationSequence(
     name="Improved TIL CNN",
     version="1.0",
     source="doi:10.3389/fonc.2021.806603",
     family=codes.cid7162.ArtificialIntelligence,
 )
-segmentation_series_description_2022 = "Improved Automatic TIL Map"
+segmentation_series_description_2022_binary = "Improved Automatic TIL Map (Binary)"
+segmentation_series_description_2022_fractional = "Improved Automatic TIL Map (Probability)"
 seg_manufacturer_2022 = "Stony Brook University"
 seg_manufacturer_model_name_2022 = "Improved TIL CNN"
