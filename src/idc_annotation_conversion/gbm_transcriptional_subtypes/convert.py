@@ -132,8 +132,6 @@ def convert_segmentation(
         array=mask,
     )
 
-    # TODO account for start location when determining position
-
     logging.info("Creating DICOM Segmentation")
     seg_start_time = time()
     segmentation = hd.seg.Segmentation(
