@@ -56,14 +56,15 @@ segmentation_channel_order_2018 = [
     "TIL Positive",
 ]
 algorithm_identification_2018 = hd.AlgorithmIdentificationSequence(
-    name="TIL CNN",
+    name="TIL-2018-CNN",
     version="1.0",
     source="doi:10.7937/K9/TCIA.2018.Y75F9W1",
     family=codes.cid7162.ArtificialIntelligence,
+    parameters={"patch size": "50 x 50 microns"},
 )
-segmentation_series_description_2018 = "Automatic TIL Map"
+segmentation_series_description_2018 = "TIL Map Generated Using a Custom CNN Model"
 seg_manufacturer_2018 = "Stony Brook University"
-seg_manufacturer_model_name_2018 = "TIL CNN"
+seg_manufacturer_model_name_2018 = "TIL Custom CNN 2018"
 
 labelmap_lut = hd.PaletteColorLUTTransformation.from_colors(
     ['black', 'blue', 'red'],
@@ -109,12 +110,13 @@ finding_codes_2022 = {
 
 segmentation_channel_order_2022 = ["TIL Positive"]
 algorithm_identification_2022 = hd.AlgorithmIdentificationSequence(
-    name="Improved TIL CNN",
+    name="TIL-2022-InceptionV4",
     version="1.0",
     source="doi:10.3389/fonc.2021.806603",
     family=codes.cid7162.ArtificialIntelligence,
+    parameters={"patch size": "50 x 50 microns"},
 )
-segmentation_series_description_2022_binary = "Improved Automatic TIL Map (Binary)"
-segmentation_series_description_2022_fractional = "Improved Automatic TIL Map (Probability)"
+segmentation_series_description_2022_binary = "Binary TIL Map Generated Using An Inception-V4 model"
+segmentation_series_description_2022_fractional = "Fractional TIL Map Generated Using An Inception-V4 model"
 seg_manufacturer_2022 = "Stony Brook University"
 seg_manufacturer_model_name_2022 = "Improved TIL CNN"
