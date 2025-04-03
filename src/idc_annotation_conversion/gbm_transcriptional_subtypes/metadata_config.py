@@ -1,7 +1,5 @@
-"""Metadata used for RMS conversions."""
-import numpy as np
+"""Metadata used for transcriptomic subtype map conversions."""
 import highdicom as hd
-import pydicom
 from pydicom.sr.codedict import codes
 
 from idc_annotation_conversion.git_utils import (
@@ -100,9 +98,9 @@ segmentation_channel_order = [
     "Normal",
 ]
 algorithm_identification = hd.AlgorithmIdentificationSequence(
-    name="Transcriptional Subtypes CNN",
+    name="GBM360",
     version="1.0",
-    source="doi:10.1038/s41467-023-39933-0",
+    source="https://github.com/gevaertlab/GBM360/",
     family=codes.cid7162.ArtificialIntelligence,
 )
 segmentation_series_description = "Automated Transcriptional Subtype Map"

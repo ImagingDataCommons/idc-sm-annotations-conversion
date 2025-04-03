@@ -1,7 +1,5 @@
-"""Metadata used for RMS conversions."""
-import numpy as np
+"""Metadata used for TCGA TIL map conversions."""
 import highdicom as hd
-import pydicom
 from pydicom.sr.codedict import codes
 
 from idc_annotation_conversion.git_utils import (
