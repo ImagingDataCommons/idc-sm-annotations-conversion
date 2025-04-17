@@ -119,7 +119,7 @@ pmap_manufacturer_model_name = "IDC SM Annotation Conversion"
 pmap_software_versions = get_git_remote_url(simplify=True)
 pmap_device_serial_number = get_git_commit_hash()
 pmap_series_description = "Aggressiveness Map"
-pmap_content_label = None
+pmap_content_label = "AGGRESSIVENESS"
 pmap_content_description = "Map of aggressiveness"
 pmap_image_flavor = "OTHER"
 pmap_real_world_value_mappings = [
