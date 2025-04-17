@@ -44,7 +44,7 @@ def convert_segmentation(
 
     Returns
     -------
-    segmentations: hd.seg.Segmentation
+    hghdicom.seg.Segmentation
         DICOM segmentation image encoding the original annotations
 
     """
@@ -157,3 +157,106 @@ def convert_segmentation(
     logging.info(f"Created DICOM Segmentation in {seg_time:.1f}s.")
 
     return segmentation
+
+
+def convert_aggressiveness_map(
+    scores: np.ndarray,
+    coords: np.ndarray,
+    source_image: pydicom.Dataset,
+    dimension_organization_type: Union[hd.DimensionOrganizationTypeValues, str],
+) -> hd.pm.ParametricMap:
+    """Convert segmentation dataframe to DICOM segmentation.
+
+    Parameters
+    ----------
+    scores: numpy.ndarray
+        1-d numpy array giving aggressiveness scores.
+    coords: numpy.ndarray
+        2-d numpy array of shape (n, 2), where coords[i, :] gives the [x, y]
+        total pixel matrix coordinates of scores[i].
+    source_image: pydicom.Dataset
+        Pydicom dataset containing the metadata of the image (already converted
+        to DICOM format). This can be the full image datasets, but the
+        PixelData attribute is not required.
+    dimension_organization_type: Union[hd.DimensionOrganizationTypeValues, str], optional
+        Dimension organization type of the output parametric map.
+
+    Returns
+    -------
+    highdicom.pmap.ParametricMap
+        DICOM parametric map image encoding the original annotations
+
+    """
+    source_image_hd = hd.Image.from_dataset(source_image, copy=False)
+
+    sorted_x_vals = np.unique(coords[:, 0])
+    sorted_y_vals = np.unique(coords[:, 1])
+    diff_x = np.diff(sorted_x_vals)
+    diff_y = np.diff(sorted_y_vals)
+    x_start = sorted_x_vals[0]
+    y_start = sorted_y_vals[0]
+
+    spacing_x = diff_x[0]
+    spacing_y = diff_y[0]
+
+    assert np.all(diff_x % spacing_x == 0)
+    assert np.all(diff_y % spacing_y == 0)
+
+    x_indices = ((coords[:, 0] - x_start) / spacing_x).round().astype(np.uint32)
+    y_indices = ((coords[:, 1] - y_start) / spacing_y).round().astype(np.uint32)
+
+    shape = (1, y_indices.max() + 1, x_indices.max() + 1)
+    score_map = np.zeros(shape, dtype=scores.dtype)
+
+    for x, y, score in zip(x_indices, y_indices, scores):
+        score_map[0, y, x] = score
+
+    source_geometry = source_image_hd.get_volume_geometry()
+
+    # Account for the shift in position due to the resampling, assuming that
+    # the corner of the two images remains the same
+    # TODO factor this into highdicom as resampling
+    new_pix_spacing = 0.056  # from description in paper (56 microns)
+    new_position = (
+        np.array(source_geometry.position) +
+        (new_pix_spacing / 2.0 - source_geometry.spacing[1] / 2.0) * np.array(source_geometry.unit_vectors()[1]) +
+        (new_pix_spacing / 2.0 - source_geometry.spacing[2] / 2.0) * np.array(source_geometry.unit_vectors()[2])
+    )
+
+    position_sequence = hd.PlanePositionSequence(
+        coordinate_system="SLIDE",
+        image_position=new_position,
+        pixel_matrix_position=[1, 1],
+    )
+    measures_sequence = hd.PixelMeasuresSequence(
+        pixel_spacing=[new_pix_spacing] * 2,
+        slice_thickness=source_geometry.spacing_between_slices,
+    )
+
+    pmap = hd.pm.ParametricMap(
+        source_images=[source_image_hd],
+        pixel_array=score_map,
+        series_instance_uid=hd.UID(),
+        sop_instance_uid=hd.UID(),
+        series_number=21,
+        instance_number=1,
+        manufacturer=metadata_config.pmap_manufacturer,
+        manufacturer_model_name=metadata_config.pmap_manufacturer_model_name,
+        device_serial_number=metadata_config.pmap_device_serial_number,
+        software_versions=metadata_config.pmap_software_versions,
+        series_description=metadata_config.pmap_series_description,
+        contains_recognizable_visual_features=False,
+        real_world_value_mappings=metadata_config.pmap_real_world_value_mappings,
+        window_center=0.5,
+        window_width=1.0,
+        content_label=metadata_config.pmap_content_label,
+        content_description=metadata_config.pmap_content_description,
+        pixel_measures=measures_sequence,
+        plane_orientation=source_geometry.get_plane_orientation(),
+        plane_positions=[position_sequence],
+    )
+
+    # TODO fold this into highdicom
+    pmap.ImageType[2] = metadata_config.pmap_image_flavor
+
+    return pmap

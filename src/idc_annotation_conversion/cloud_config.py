@@ -14,3 +14,11 @@ DICOM_IMAGES_BUCKET = "public-datasets-idc"
 
 GCP_DEFAULT_LOCATION = "us-central1"
 """Default location for creating new buckets."""
+
+
+OPEN_DATA_BUCKET = "idc-open-data"
+"""Name of bucket containing public IDC data."""
+
+
+SOURCE_DATA_PROJECT = "idc-source-data"
+"""Name of project containing source data buckets."""

@@ -111,3 +111,26 @@ labelmap_lut = hd.PaletteColorLUTTransformation.from_colors(
     ['black', 'red', 'brown', 'purple', 'blue', 'green', 'white'],
     palette_color_lut_uid=hd.UID(),
 )
+
+
+# Aggressiveness maps
+pmap_manufacturer = "Imaging Data Commons"
+pmap_manufacturer_model_name = "IDC SM Annotation Conversion"
+pmap_software_versions = get_git_remote_url(simplify=True)
+pmap_device_serial_number = get_git_commit_hash()
+pmap_series_description = "Aggressiveness Map"
+pmap_content_label = None
+pmap_content_description = "Map of aggressiveness"
+pmap_image_flavor = "OTHER"
+pmap_real_world_value_mappings = [
+    hd.pm.RealWorldValueMapping(
+        lut_label="Aggressiveness",
+        lut_explanation="Aggressive scores calculated by a convolutional neural network",
+        unit=codes.UCUM.NoUnits,
+        value_range=(0.0, 1.0),
+        slope=1.0,
+        intercept=0.0,
+        quantity_definition=codes.SCT.Severity,
+    )
+]
+# derived_pixel_contrast = ""
