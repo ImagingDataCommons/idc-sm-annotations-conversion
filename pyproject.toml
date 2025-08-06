@@ -10,7 +10,7 @@ packages = [{include = "idc_annotation_conversion", from = "src" }]
 python = "^3.10"
 numpy = ">=2.0.0"
 pydicom = "^3.0.1"
-highdicom = { version = "^0.25.1", extras = ["libjpeg"] }
+highdicom = { version = "^0.26.1", extras = ["libjpeg"] }
 google-cloud-bigquery = "^3.6.0"
 google-cloud-storage = "^2.7.0"
 google-auth = "^2.16.2"
