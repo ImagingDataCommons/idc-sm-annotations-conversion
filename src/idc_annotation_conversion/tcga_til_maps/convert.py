@@ -104,11 +104,12 @@ def convert_segmentation(
     # the corner of the two images remains the same
     # TODO factor this into highdicom as resampling
     new_pix_spacing = 0.05  # from description in paper
-    new_position = (
-        np.array(source_geometry.position) +
-        (new_pix_spacing / 2.0 - source_geometry.spacing[1] / 2.0) * np.array(source_geometry.unit_vectors()[1]) +
-        (new_pix_spacing / 2.0 - source_geometry.spacing[2] / 2.0) * np.array(source_geometry.unit_vectors()[2])
-    )
+    # new_position = (
+    #     np.array(source_geometry.position) +
+    #     (new_pix_spacing / 2.0 - source_geometry.spacing[1] / 2.0) * np.array(source_geometry.unit_vectors()[1]) +
+    #     (new_pix_spacing / 2.0 - source_geometry.spacing[2] / 2.0) * np.array(source_geometry.unit_vectors()[2])
+    # )
+    new_position = np.array(source_geometry.position)
 
     mask_volume = hd.Volume.from_components(
         direction=source_geometry.direction,
@@ -252,11 +253,12 @@ def convert_txt_file(
     # the corner of the two images remains the same
     # TODO factor this into highdicom as resampling
     new_pix_spacing = 0.05  # from description in paper
-    new_position = (
-        np.array(source_geometry.position) +
-        (new_pix_spacing / 2.0 - source_geometry.spacing[1] / 2.0) * np.array(source_geometry.unit_vectors()[1]) +
-        (new_pix_spacing / 2.0 - source_geometry.spacing[2] / 2.0) * np.array(source_geometry.unit_vectors()[2])
-    )
+    # new_position = (
+    #     np.array(source_geometry.position) +
+    #     (new_pix_spacing / 2.0 - source_geometry.spacing[1] / 2.0) * np.array(source_geometry.unit_vectors()[1]) +
+    #     (new_pix_spacing / 2.0 - source_geometry.spacing[2] / 2.0) * np.array(source_geometry.unit_vectors()[2])
+    # )
+    new_position = np.array(source_geometry.position)
 
     mask_volume = hd.Volume.from_components(
         direction=source_geometry.direction,

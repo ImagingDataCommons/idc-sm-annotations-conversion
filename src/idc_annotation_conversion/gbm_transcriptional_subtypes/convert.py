@@ -118,15 +118,15 @@ def convert_segmentation(
     # the corner of the two images remains the same
     # TODO factor this into highdicom as resampling
     new_pix_spacing = 0.056  # from description in paper (56 microns)
-    new_position = (
-        np.array(source_geometry.position) +
-        (new_pix_spacing / 2.0 - source_geometry.spacing[1] / 2.0) * np.array(source_geometry.unit_vectors()[1]) +
-        (new_pix_spacing / 2.0 - source_geometry.spacing[2] / 2.0) * np.array(source_geometry.unit_vectors()[2])
-    )
+    # new_position = (
+    #     np.array(source_geometry.position) +
+    #     (new_pix_spacing / 2.0 - source_geometry.spacing[1] / 2.0) * np.array(source_geometry.unit_vectors()[1]) +
+    #     (new_pix_spacing / 2.0 - source_geometry.spacing[2] / 2.0) * np.array(source_geometry.unit_vectors()[2])
+    # )
 
     mask_volume = hd.Volume.from_components(
         direction=source_geometry.direction,
-        position=new_position,
+        position=source_geometry.position,
         spacing=np.array([1.0, new_pix_spacing, new_pix_spacing]),
         coordinate_system="SLIDE",
         array=mask,
@@ -217,15 +217,15 @@ def convert_aggressiveness_map(
     # the corner of the two images remains the same
     # TODO factor this into highdicom as resampling
     new_pix_spacing = 0.056  # from description in paper (56 microns)
-    new_position = (
-        np.array(source_geometry.position) +
-        (new_pix_spacing / 2.0 - source_geometry.spacing[1] / 2.0) * np.array(source_geometry.unit_vectors()[1]) +
-        (new_pix_spacing / 2.0 - source_geometry.spacing[2] / 2.0) * np.array(source_geometry.unit_vectors()[2])
-    )
+    # new_position = (
+    #     np.array(source_geometry.position) +
+    #     (new_pix_spacing / 2.0 - source_geometry.spacing[1] / 2.0) * np.array(source_geometry.unit_vectors()[1]) +
+    #     (new_pix_spacing / 2.0 - source_geometry.spacing[2] / 2.0) * np.array(source_geometry.unit_vectors()[2])
+    # )
 
     position_sequence = hd.PlanePositionSequence(
         coordinate_system="SLIDE",
-        image_position=new_position,
+        image_position=source_geometry.position,
         pixel_matrix_position=[1, 1],
     )
     measures_sequence = hd.PixelMeasuresSequence(
