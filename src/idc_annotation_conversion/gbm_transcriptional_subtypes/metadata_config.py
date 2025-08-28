@@ -1,5 +1,6 @@
 """Metadata used for transcriptomic subtype map conversions."""
 import highdicom as hd
+from highdicom.color import CIELabColor
 from pydicom.sr.codedict import codes
 
 from idc_annotation_conversion.git_utils import (
@@ -112,6 +113,15 @@ labelmap_lut = hd.PaletteColorLUTTransformation.from_colors(
     palette_color_lut_uid=hd.UID(),
 )
 
+display_colors = {
+    "OPClike": CIELabColor.from_color("red"),
+    "MESlike1": CIELabColor.from_color("brown"),
+    "MESlike2": CIELabColor.from_color("purple"),
+    "NPClike": CIELabColor.from_color("blue"),
+    "AClike": CIELabColor.from_color("green"),
+    "Normal": CIELabColor.from_color("white"),
+}
+
 
 # Aggressiveness maps
 pmap_manufacturer = "Imaging Data Commons"
@@ -130,7 +140,11 @@ pmap_real_world_value_mappings = [
         value_range=(0.0, 1.0),
         slope=1.0,
         intercept=0.0,
-        quantity_definition=codes.SCT.Severity,
+        quantity_definition=hd.sr.CodedConcept(
+            meaning='Severity',
+            value='246112005',
+            scheme_designator='SCT',
+        ),
     )
 ]
 # derived_pixel_contrast = ""

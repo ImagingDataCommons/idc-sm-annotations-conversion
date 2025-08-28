@@ -50,12 +50,22 @@ def convert_segmentation(
     """
     seg_start_time = time()
 
+    if include_lut and segmentation_type == hd.seg.SegmentationTypeValues.LABELMAP:
+        lut_transform = metadata_config.labelmap_lut
+    else:
+        lut_transform = None
+
     container_id = source_image.ContainerIdentifier
     segment_descriptions = []
     for (number, label) in enumerate(
         metadata_config.segmentation_channel_order,
         start=1
     ):
+        color = (
+            metadata_config.display_colors[label]
+            if lut_transform is None else None
+        )
+
         desc = hd.seg.SegmentDescription(
             segment_number=number,
             segment_label=label,
@@ -65,6 +75,7 @@ def convert_segmentation(
             algorithm_identification=metadata_config.algorithm_identification,
             tracking_id=f"{container_id}-{label}",
             tracking_uid=hd.UID(),
+            display_color=color,
         )
         segment_descriptions.append(desc)
 
@@ -72,11 +83,6 @@ def convert_segmentation(
     dimension_organization_type = hd.DimensionOrganizationTypeValues(
         dimension_organization_type
     )
-
-    if include_lut and segmentation_type == hd.seg.SegmentationTypeValues.LABELMAP:
-        lut_transform = metadata_config.labelmap_lut
-    else:
-        lut_transform = None
 
     # Compression method depends on what is possible given the chosen
     # segmentation type
