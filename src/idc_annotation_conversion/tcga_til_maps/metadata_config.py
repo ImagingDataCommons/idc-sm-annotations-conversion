@@ -1,5 +1,7 @@
 """Metadata used for TCGA TIL map conversions."""
 import highdicom as hd
+from highdicom.color import CIELabColor
+import pydicom
 from pydicom.sr.codedict import codes
 
 from idc_annotation_conversion.git_utils import (
@@ -21,12 +23,12 @@ device_serial_number = get_git_commit_hash()
 # Cell reports 23.1 (2018): 181-193.
 
 # Dictionary mapping text label found in the XML annotations to tuple of
-# (finding_type, finding_category) codes to encode that finding
+# (finding_category, finding_type) codes to encode that finding
 finding_codes_2018 = {
     "TIL Positive": (
         hd.sr.CodedConcept(
-            meaning="Function",
-            value="246464006",
+            meaning="Morphologically abnormal structure",
+            value="49755003",
             scheme_designator="SCT",
         ),
         hd.sr.CodedConcept(
@@ -37,8 +39,8 @@ finding_codes_2018 = {
     ),
     "TIL Negative": (
         hd.sr.CodedConcept(
-            meaning="Function",
-            value="246464006",
+            meaning="Morphologically abnormal structure",
+            value="49755003",
             scheme_designator="SCT",
         ),
         hd.sr.CodedConcept(
@@ -60,14 +62,19 @@ algorithm_identification_2018 = hd.AlgorithmIdentificationSequence(
     family=codes.cid7162.ArtificialIntelligence,
     parameters={"patch size": "50 x 50 microns"},
 )
-segmentation_series_description_2018 = "TIL Map Generated Using a Custom CNN Model"
-seg_manufacturer_2018 = "Stony Brook University"
-seg_manufacturer_model_name_2018 = "TIL Custom CNN 2018"
+segmentation_series_description_2018 = "CNN-generated TIL Map"
+seg_manufacturer_2018 = "Stony Brook University converted by Imaging Data Commons"
+seg_manufacturer_model_name_2018 = "TIL Custom CNN 2018 converted by Imaging Data Commons"
 
 labelmap_lut = hd.PaletteColorLUTTransformation.from_colors(
     ['black', 'blue', 'red'],
     palette_color_lut_uid=hd.UID(),
 )
+
+display_colors = {
+    "TIL Positive": CIELabColor.from_rgb(255, 0, 0),  # red
+    "TIL Negative": CIELabColor.from_rgb(0, 0, 255),  # blue
+}
 
 # 2022 TIL Maps
 # =============
@@ -82,25 +89,13 @@ labelmap_lut = hd.PaletteColorLUTTransformation.from_colors(
 finding_codes_2022 = {
     "TIL Positive": (
         hd.sr.CodedConcept(
-            meaning="Function",
-            value="246464006",
+            meaning="Morphologically abnormal structure",
+            value="49755003",
             scheme_designator="SCT",
         ),
         hd.sr.CodedConcept(
             meaning="Tumor infiltration by lymphocytes present",
             value="399721002",
-            scheme_designator="SCT",
-        ),
-    ),
-    "TIL Negative": (
-        hd.sr.CodedConcept(
-            meaning="Function",
-            value="246464006",
-            scheme_designator="SCT",
-        ),
-        hd.sr.CodedConcept(
-            meaning="Tumor infiltration by lymphocytes absent",
-            value="396396002",
             scheme_designator="SCT",
         ),
     ),
@@ -114,7 +109,31 @@ algorithm_identification_2022 = hd.AlgorithmIdentificationSequence(
     family=codes.cid7162.ArtificialIntelligence,
     parameters={"patch size": "50 x 50 microns"},
 )
-segmentation_series_description_2022_binary = "Binary TIL Map Generated Using An Inception-V4 model"
-segmentation_series_description_2022_fractional = "Fractional TIL Map Generated Using An Inception-V4 model"
-seg_manufacturer_2022 = "Stony Brook University"
-seg_manufacturer_model_name_2022 = "Improved TIL CNN"
+segmentation_series_description_2022_binary = "Inception-V4 Binary TIL Map"
+segmentation_series_description_2022_fractional = "Inception-V4 Fractional TIL Map"
+seg_manufacturer_2022 = "Stony Brook University converted by Imaging Data Commons"
+seg_manufacturer_model_name_2022 = "TIL Inception-V4 2022 converted by Imaging Data Commons"
+
+# DOI of the conversion page in Zenodo for other clinical trial protocol
+# These are not yet in pydicom's data dict so we have to set the elements
+# manually
+# IssuerOfClinicalTrialProtocolID
+issuer_tag = pydicom.tag.Tag(0x0012, 0x0022)
+# OtherClinicalTrialProtocolIDsSequence
+other_trials_seq_tag = pydicom.tag.Tag(0x0012, 0x0023)
+
+clinical_trial_ids_item = pydicom.Dataset()
+issuer_value = "DOI"
+clinical_trial_ids_item.add(
+    pydicom.DataElement(
+        issuer_tag,
+        "LO",
+        issuer_value,
+    )
+)
+clinical_trial_ids_item.ClinicalTrialProtocolID = "doi:10.5281/zenodo.16966285"
+other_trials_seq_element = pydicom.DataElement(
+    other_trials_seq_tag,
+    "SQ",
+    [clinical_trial_ids_item],
+)

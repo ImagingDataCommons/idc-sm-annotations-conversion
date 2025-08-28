@@ -32,9 +32,14 @@ def read_dataset_from_blob(
         Dataset loaded from the specified blob.
 
     """
+    chunk_size = None
+    if stop_before_pixels:
+        # Use a much smaller chunk size when just pulling metadata
+        chunk_size = 500_000
+
     blob = bucket.get_blob(blob_name)
     dcm = pydicom.dcmread(
-        blob.open(mode="rb"),
+        blob.open(mode="rb", chunk_size=chunk_size),
         stop_before_pixels=stop_before_pixels,
     )
     return dcm
