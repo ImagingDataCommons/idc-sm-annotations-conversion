@@ -114,12 +114,12 @@ labelmap_lut = hd.PaletteColorLUTTransformation.from_colors(
 )
 
 display_colors = {
-    "OPClike": CIELabColor.from_color("red"),
-    "MESlike1": CIELabColor.from_color("brown"),
-    "MESlike2": CIELabColor.from_color("purple"),
-    "NPClike": CIELabColor.from_color("blue"),
-    "AClike": CIELabColor.from_color("green"),
-    "Normal": CIELabColor.from_color("white"),
+    "OPClike": CIELabColor.from_string("red"),
+    "MESlike1": CIELabColor.from_string("brown"),
+    "MESlike2": CIELabColor.from_string("purple"),
+    "NPClike": CIELabColor.from_string("blue"),
+    "AClike": CIELabColor.from_string("green"),
+    "Normal": CIELabColor.from_string("white"),
 }
 
 
@@ -135,7 +135,7 @@ pmap_image_flavor = "OTHER"
 pmap_real_world_value_mappings = [
     hd.pm.RealWorldValueMapping(
         lut_label="Aggressiveness",
-        lut_explanation="Aggressive scores calculated by a convolutional neural network",
+        lut_explanation="Aggressiveness scores calculated by a convolutional neural network",
         unit=codes.UCUM.NoUnits,
         value_range=(0.0, 1.0),
         slope=1.0,
