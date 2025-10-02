@@ -135,7 +135,7 @@ pmap_image_flavor = "OTHER"
 pmap_real_world_value_mappings = [
     hd.pm.RealWorldValueMapping(
         lut_label="Aggressiveness",
-        lut_explanation="Aggressiveness scores calculated by a convolutional neural network",
+        lut_explanation="Aggressiveness scores calculated by a neural network",
         unit=codes.UCUM.NoUnits,
         value_range=(0.0, 1.0),
         slope=1.0,

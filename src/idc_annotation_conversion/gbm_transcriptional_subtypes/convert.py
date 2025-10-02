@@ -1,7 +1,6 @@
 import logging
 from time import time
-from typing import Union
-from collections import Counter
+from typing import cast, Union
 
 import numpy as np
 import pydicom
@@ -108,6 +107,7 @@ def convert_segmentation(
 
     assert np.all(diff_x % spacing_x == 0)
     assert np.all(diff_y % spacing_y == 0)
+    assert spacing_x == spacing_y
 
     x_indices = ((segmentation_dataframe.x.values - x_start) / spacing_x).round().astype(np.uint32)
     y_indices = ((segmentation_dataframe.y.values - y_start) / spacing_y).round().astype(np.uint32)
@@ -118,12 +118,12 @@ def convert_segmentation(
     for x, y, t in zip(x_indices, y_indices, segmentation_dataframe.cell_type):
         mask[0, y, x] = metadata_config.segmentation_channel_order.index(t) + 1
 
-    source_geometry = source_image.get_volume_geometry()
+    source_geometry = cast(hd.VolumeGeometry, source_image.get_volume_geometry())
 
     # Account for the shift in position due to the resampling, assuming that
     # the corner of the two images remains the same
     # TODO factor this into highdicom as resampling
-    new_pix_spacing = 0.056  # from description in paper (56 microns)
+    new_pix_spacing = spacing_x * source_geometry.pixel_spacing[0]
     # new_position = (
     #     np.array(source_geometry.position) +
     #     (new_pix_spacing / 2.0 - source_geometry.spacing[1] / 2.0) * np.array(source_geometry.unit_vectors()[1]) +
@@ -207,6 +207,7 @@ def convert_aggressiveness_map(
 
     assert np.all(diff_x % spacing_x == 0)
     assert np.all(diff_y % spacing_y == 0)
+    assert spacing_x == spacing_y
 
     x_indices = ((coords[:, 0] - x_start) / spacing_x).round().astype(np.uint32)
     y_indices = ((coords[:, 1] - y_start) / spacing_y).round().astype(np.uint32)
@@ -217,12 +218,12 @@ def convert_aggressiveness_map(
     for x, y, score in zip(x_indices, y_indices, scores):
         score_map[0, y, x] = score
 
-    source_geometry = source_image_hd.get_volume_geometry()
+    source_geometry = cast(hd.VolumeGeometry, source_image_hd.get_volume_geometry())
 
     # Account for the shift in position due to the resampling, assuming that
     # the corner of the two images remains the same
     # TODO factor this into highdicom as resampling
-    new_pix_spacing = 0.056  # from description in paper (56 microns)
+    new_pix_spacing = spacing_x * source_geometry.pixel_spacing[0]
     # new_position = (
     #     np.array(source_geometry.position) +
     #     (new_pix_spacing / 2.0 - source_geometry.spacing[1] / 2.0) * np.array(source_geometry.unit_vectors()[1]) +
