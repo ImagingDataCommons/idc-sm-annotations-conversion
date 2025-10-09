@@ -275,6 +275,11 @@ def convert_txt_file(
         array=mask,
     )
 
+    # If the image size is smaller than 32 in either dimension, there will be a
+    # compression error, so switch to uncompressed
+    if mask.shape[0] < 33 or mask.shape[2] < 33:
+        transfer_syntax_uid = ExplicitVRLittleEndian
+
     segment_descriptions = []
     for (number, label) in enumerate(
         metadata_config.segmentation_channel_order_2022,
