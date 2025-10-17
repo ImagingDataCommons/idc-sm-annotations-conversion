@@ -223,16 +223,11 @@ def convert_txt_file(
     diff_x = np.diff(sorted_x_vals)
     sorted_y_vals = df.sort_values("y").y.unique()
     diff_y = np.diff(sorted_y_vals)
-    x_start = sorted_x_vals[0]
-    y_start = sorted_y_vals[0]
 
     # Due to resampling, the coordinates of the segmentation are not quite
     # regularly spaced
     spacing_x = Counter(diff_x).most_common(1)[0][0]
     spacing_y = Counter(diff_y).most_common(1)[0][0]
-
-    assert abs(spacing_x // 2 - x_start) < 2
-    assert abs(spacing_y // 2 - y_start) < 2
 
     # Check the spacing is "near" regular: the gap between either neighbouring
     # pixels is either the most common spacing value, or within 1 pixel of it
@@ -241,17 +236,20 @@ def convert_txt_file(
     if np.any(np.abs(diff_y - spacing_y) > 1):
         raise RuntimeError("Missing pixels")
 
-    x_indices = ((df.x.values - x_start) / spacing_x).round().astype(np.uint32)
-    y_indices = ((df.y.values - y_start) / spacing_y).round().astype(np.uint32)
+    x_indices_map = {v: i for i, v in enumerate(sorted_x_vals)}
+    y_indices_map = {v: i for i, v in enumerate(sorted_y_vals)}
 
-    shape = (1, y_indices.max() + 1, x_indices.max() + 1)
+    shape = (1, len(sorted_y_vals), len(sorted_x_vals))
     mask = np.zeros(shape, dtype=array_dtype)
 
-    for x, y, v in zip(x_indices, y_indices, df.value):
+    for x, y, v in zip(df.x, df.y, df.value):
         if not is_probability:
             v = bool(v)
 
-        mask[0, y, x] = v
+        x_ind = x_indices_map[x]
+        y_ind = y_indices_map[y]
+
+        mask[0, y_ind, x_ind] = v
 
     # Create volume with correct spatial metadata
     source_geometry = source_image.get_volume_geometry()
@@ -259,12 +257,13 @@ def convert_txt_file(
     # Account for the shift in position due to the resampling, assuming that
     # the corner of the two images remains the same
     # TODO factor this into highdicom as resampling
-    new_pix_spacing = 0.05  # from description in paper
     # new_position = (
     #     np.array(source_geometry.position) +
     #     (new_pix_spacing / 2.0 - source_geometry.spacing[1] / 2.0) * np.array(source_geometry.unit_vectors()[1]) +
     #     (new_pix_spacing / 2.0 - source_geometry.spacing[2] / 2.0) * np.array(source_geometry.unit_vectors()[2])
     # )
+
+    new_pix_spacing = 0.05  # from description in paper
     new_position = np.array(source_geometry.position)
 
     mask_volume = hd.Volume.from_components(
