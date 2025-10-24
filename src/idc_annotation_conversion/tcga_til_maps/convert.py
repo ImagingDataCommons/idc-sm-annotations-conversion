@@ -106,15 +106,7 @@ def convert_segmentation(
 
     source_geometry = source_image.get_volume_geometry()
 
-    # Account for the shift in position due to the resampling, assuming that
-    # the corner of the two images remains the same
-    # TODO factor this into highdicom as resampling
     new_pix_spacing = 0.05  # from description in paper
-    # new_position = (
-    #     np.array(source_geometry.position) +
-    #     (new_pix_spacing / 2.0 - source_geometry.spacing[1] / 2.0) * np.array(source_geometry.unit_vectors()[1]) +
-    #     (new_pix_spacing / 2.0 - source_geometry.spacing[2] / 2.0) * np.array(source_geometry.unit_vectors()[2])
-    # )
     new_position = np.array(source_geometry.position)
 
     mask_volume = hd.Volume.from_components(
@@ -148,6 +140,16 @@ def convert_segmentation(
         palette_color_lut_transformation=lut_transform,
     )
     segmentation.add(metadata_config.other_trials_seq_element)
+
+    # It was decided that the DimensionIndexSequence should not be included
+    # "TILED_FULL" segmentations. It is planned that this will be changed in
+    # highdicom 0.28.0, but for now here we just delete it after creation
+    if (
+        dimension_organization_type == hd.DimensionOrganizationTypeValues.TILED_FULL
+        and "DimensionIndexSequence" in segmentation
+    ):
+        del segmentation.DimensionIndexSequence
+
     seg_time = time() - seg_start_time
     logging.info(f"Created DICOM Segmentation in {seg_time:.1f}s.")
 
@@ -254,15 +256,6 @@ def convert_txt_file(
     # Create volume with correct spatial metadata
     source_geometry = source_image.get_volume_geometry()
 
-    # Account for the shift in position due to the resampling, assuming that
-    # the corner of the two images remains the same
-    # TODO factor this into highdicom as resampling
-    # new_position = (
-    #     np.array(source_geometry.position) +
-    #     (new_pix_spacing / 2.0 - source_geometry.spacing[1] / 2.0) * np.array(source_geometry.unit_vectors()[1]) +
-    #     (new_pix_spacing / 2.0 - source_geometry.spacing[2] / 2.0) * np.array(source_geometry.unit_vectors()[2])
-    # )
-
     new_pix_spacing = 0.05  # from description in paper
     new_position = np.array(source_geometry.position)
 
@@ -324,6 +317,16 @@ def convert_txt_file(
         omit_empty_frames=omit_empty_frames,
     )
     segmentation.add(metadata_config.other_trials_seq_element)
+
+    # It was decided that the DimensionIndexSequence should not be included
+    # "TILED_FULL" segmentations. It is planned that this will be changed in
+    # highdicom 0.28.0, but for now here we just delete it after creation
+    if (
+        dimension_organization_type == hd.DimensionOrganizationTypeValues.TILED_FULL
+        and "DimensionIndexSequence" in segmentation
+    ):
+        del segmentation.DimensionIndexSequence
+
     seg_time = time() - seg_start_time
     logging.info(f"Created DICOM Segmentation in {seg_time:.1f}s.")
 

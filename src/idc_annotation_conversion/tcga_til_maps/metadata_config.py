@@ -52,17 +52,17 @@ finding_codes_2018 = {
 }
 
 segmentation_channel_order_2018 = [
-    "TIL Negative",
-    "TIL Positive",
+    "TILs Absent",
+    "TILs Present",
 ]
 algorithm_identification_2018 = hd.AlgorithmIdentificationSequence(
-    name="TIL-2018-CNN",
+    name="Stony Brook TIL Segmentation CNN 2018",
     version="1.0",
     source="doi:10.7937/K9/TCIA.2018.Y75F9W1",
     family=codes.cid7162.ArtificialIntelligence,
     parameters={"patch size": "50 x 50 microns"},
 )
-segmentation_series_description_2018 = "CNN-generated TIL Map"
+segmentation_series_description_2018 = "Stony Brook CNN-generated TIL Map"
 seg_manufacturer_2018 = "Stony Brook University converted by Imaging Data Commons"
 seg_manufacturer_model_name_2018 = "TIL Custom CNN 2018 converted by Imaging Data Commons"
 
@@ -72,8 +72,8 @@ labelmap_lut = hd.PaletteColorLUTTransformation.from_colors(
 )
 
 display_colors = {
-    "TIL Positive": CIELabColor.from_rgb(255, 0, 0),  # red
-    "TIL Negative": CIELabColor.from_rgb(0, 0, 255),  # blue
+    "TILs Present": CIELabColor.from_rgb(255, 0, 0),  # red
+    "TILs Absent": CIELabColor.from_rgb(0, 0, 255),  # blue
 }
 
 # 2022 TIL Maps
@@ -87,7 +87,7 @@ display_colors = {
 # Dictionary mapping text label found in the XML annotations to tuple of
 # (finding_type, finding_category) codes to encode that finding
 finding_codes_2022 = {
-    "TIL Positive": (
+    "TILs Present": (
         hd.sr.CodedConcept(
             meaning="Morphologically abnormal structure",
             value="49755003",
@@ -101,16 +101,16 @@ finding_codes_2022 = {
     ),
 }
 
-segmentation_channel_order_2022 = ["TIL Positive"]
+segmentation_channel_order_2022 = ["TILs Present"]
 algorithm_identification_2022 = hd.AlgorithmIdentificationSequence(
-    name="TIL-2022-InceptionV4",
+    name="Stony Brook TIL Segmentation Inception-V4 2022",
     version="1.0",
     source="doi:10.3389/fonc.2021.806603",
     family=codes.cid7162.ArtificialIntelligence,
     parameters={"patch size": "50 x 50 microns"},
 )
-segmentation_series_description_2022_binary = "Inception-V4 Binary TIL Map"
-segmentation_series_description_2022_fractional = "Inception-V4 Fractional TIL Map"
+segmentation_series_description_2022_binary = "Stony Brook Inception-V4 Binary TIL Map"
+segmentation_series_description_2022_fractional = "Stony Brook Inception-V4 Fractional TIL Map"
 seg_manufacturer_2022 = "Stony Brook University converted by Imaging Data Commons"
 seg_manufacturer_model_name_2022 = "TIL Inception-V4 2022 converted by Imaging Data Commons"
 
