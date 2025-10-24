@@ -25,7 +25,7 @@ device_serial_number = get_git_commit_hash()
 # Dictionary mapping text label found in the XML annotations to tuple of
 # (finding_category, finding_type) codes to encode that finding
 finding_codes_2018 = {
-    "TIL Positive": (
+    "TILs Present": (
         hd.sr.CodedConcept(
             meaning="Morphologically abnormal structure",
             value="49755003",
@@ -37,7 +37,7 @@ finding_codes_2018 = {
             scheme_designator="SCT",
         ),
     ),
-    "TIL Negative": (
+    "TILs Absent": (
         hd.sr.CodedConcept(
             meaning="Morphologically abnormal structure",
             value="49755003",
