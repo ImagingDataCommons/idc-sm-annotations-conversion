@@ -726,14 +726,14 @@ numpy = ">=1.19.3"
 
 [[package]]
 name = "highdicom"
-version = "0.26.1"
+version = "0.27.0"
 description = "High-level DICOM abstractions."
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "highdicom-0.26.1-py3-none-any.whl", hash = "sha256:2b554a661c8ff6d2c6c0ca41df240c29161326066dd4025025b7768a497374df"},
-    {file = "highdicom-0.26.1.tar.gz", hash = "sha256:51c3c311e3f177a21a5a0cbabd4162fc639f2dc00f4bd9f5102f2d26b1ad1920"},
+    {file = "highdicom-0.27.0-py3-none-any.whl", hash = "sha256:90a14ef75f67b7df2c3fd83df9c0bddd787dfdfab2b08c8c68828207389aed3f"},
+    {file = "highdicom-0.27.0.tar.gz", hash = "sha256:4999b62a4fc1e58ae1d25eb12058dae3b83d816a6214c00e342356a3ad0774f2"},
 ]
 
 [package.dependencies]
@@ -2022,4 +2022,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.10"
-content-hash = "46f5c48fb5340fc6195b998a67782aac50de23ff55c4577a35dc9a9991a67f49"
+content-hash = "fcac4b63f9f3fea2e4063c818feacf51630c736bf563799a9c9315589cd7f84e"
