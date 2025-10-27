@@ -276,4 +276,6 @@ def convert_aggressiveness_map(
         if "PerFrameFunctionalGroupsSequence" in pmap:
             del pmap.PerFrameFunctionalGroupsSequence
 
+        pmap.TotalPixelMatrixFocalPlanes = 1
+
     return pmap
