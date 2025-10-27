@@ -193,6 +193,9 @@ def convert_aggressiveness_map(
         DICOM parametric map image encoding the original annotations
 
     """
+    dimension_organization_type = hd.DimensionOrganizationTypeValues(
+        dimension_organization_type
+    )
     source_image_hd = hd.Image.from_dataset(source_image, copy=False)
 
     sorted_x_vals = np.unique(coords[:, 0])
@@ -220,15 +223,7 @@ def convert_aggressiveness_map(
 
     source_geometry = cast(hd.VolumeGeometry, source_image_hd.get_volume_geometry())
 
-    # Account for the shift in position due to the resampling, assuming that
-    # the corner of the two images remains the same
-    # TODO factor this into highdicom as resampling
     new_pix_spacing = spacing_x * source_geometry.pixel_spacing[0]
-    # new_position = (
-    #     np.array(source_geometry.position) +
-    #     (new_pix_spacing / 2.0 - source_geometry.spacing[1] / 2.0) * np.array(source_geometry.unit_vectors()[1]) +
-    #     (new_pix_spacing / 2.0 - source_geometry.spacing[2] / 2.0) * np.array(source_geometry.unit_vectors()[2])
-    # )
 
     position_sequence = hd.PlanePositionSequence(
         coordinate_system="SLIDE",
@@ -261,9 +256,24 @@ def convert_aggressiveness_map(
         pixel_measures=measures_sequence,
         plane_orientation=source_geometry.get_plane_orientation(),
         plane_positions=[position_sequence],
+        contributing_equipment=metadata_config.pmap_contributing_equipment,
     )
 
     # TODO fold this into highdicom
     pmap.ImageType[2] = metadata_config.pmap_image_flavor
+    pmap.ImageType[3] = metadata_config.derived_pixel_contrast
+
+    # Current highdicom release (0.27.0) doesn't deal with dimension
+    # organization type.  This should be fixed in the next release of highdicom
+    pmap.DimensionOrganizationType = dimension_organization_type.value
+    if (
+        dimension_organization_type ==
+        hd.DimensionOrganizationTypeValues.TILED_FULL
+    ):
+        if "DimensionIndexSequence" in pmap:
+            del pmap.DimensionIndexSequence
+
+        if "PerFrameFunctionalGroupsSequence" in pmap:
+            del pmap.PerFrameFunctionalGroupsSequence
 
     return pmap

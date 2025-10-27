@@ -98,15 +98,9 @@ segmentation_channel_order = [
     "AClike",
     "Normal",
 ]
-algorithm_identification = hd.AlgorithmIdentificationSequence(
-    name="GBM360",
-    version="1.0",
-    source="https://github.com/gevaertlab/GBM360/",
-    family=codes.cid7162.ArtificialIntelligence,
-)
 segmentation_series_description = "Automated Transcriptional Subtype Map"
-seg_manufacturer = "Stanford University"
-seg_manufacturer_model_name = "Transcriptional Subtypes CNN"
+seg_manufacturer = "Gevaert Lab Converted By Imaging Data Commons"
+seg_manufacturer_model_name = "GBM360"
 
 labelmap_lut = hd.PaletteColorLUTTransformation.from_colors(
     ['black', 'red', 'brown', 'purple', 'blue', 'green', 'white'],
@@ -124,14 +118,14 @@ display_colors = {
 
 
 # Aggressiveness maps
-pmap_manufacturer = "Imaging Data Commons"
-pmap_manufacturer_model_name = "IDC SM Annotation Conversion"
+pmap_manufacturer = "Gevaert Lab Converted By Imaging Data Commons"
+pmap_manufacturer_model_name = "GBM360"
 pmap_software_versions = get_git_remote_url(simplify=True)
 pmap_device_serial_number = get_git_commit_hash()
-pmap_series_description = "Aggressiveness Map"
+pmap_series_description = "Aggressiveness Score Map"
 pmap_content_label = "AGGRESSIVENESS"
-pmap_content_description = "Map of aggressiveness"
-pmap_image_flavor = "OTHER"
+pmap_content_description = "Map of aggressiveness scores"
+pmap_image_flavor = "AGGRESSIVENESS"
 pmap_real_world_value_mappings = [
     hd.pm.RealWorldValueMapping(
         lut_label="Aggressiveness",
@@ -141,10 +135,21 @@ pmap_real_world_value_mappings = [
         slope=1.0,
         intercept=0.0,
         quantity_definition=hd.sr.CodedConcept(
-            meaning='Severity',
-            value='246112005',
-            scheme_designator='SCT',
+            meaning='Aggressiveness score',
+            value='314001',
+            scheme_designator='99PMP',
         ),
     )
 ]
-# derived_pixel_contrast = ""
+derived_pixel_contrast = "AI"
+
+pmap_contributing_equipment = [
+        hd.ContributingEquipment(
+        manufacturer="Gevaert Lab",
+        manufacturer_model_name="GBM360",
+        institution_name="Stanford University",
+        purpose_of_reference=codes.DCM.ProcessingEquipment,
+        contribution_description="Generation of aggressiveness map",
+        software_versions="https://github.com/gevaertlab/GBM360/",
+    ),
+]
