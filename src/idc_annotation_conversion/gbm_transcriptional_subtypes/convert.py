@@ -202,8 +202,6 @@ def convert_aggressiveness_map(
     sorted_y_vals = np.unique(coords[:, 1])
     diff_x = np.diff(sorted_x_vals)
     diff_y = np.diff(sorted_y_vals)
-    x_start = sorted_x_vals[0]
-    y_start = sorted_y_vals[0]
 
     spacing_x = diff_x.min()
     spacing_y = diff_y.min()
@@ -212,8 +210,8 @@ def convert_aggressiveness_map(
     assert np.all(diff_y % spacing_y == 0)
     assert spacing_x == spacing_y
 
-    x_indices = ((coords[:, 0] - x_start) / spacing_x).round().astype(np.uint32)
-    y_indices = ((coords[:, 1] - y_start) / spacing_y).round().astype(np.uint32)
+    x_indices = ((coords[:, 0]) / spacing_x).round().astype(np.uint32)
+    y_indices = ((coords[:, 1]) / spacing_y).round().astype(np.uint32)
 
     shape = (1, y_indices.max() + 1, x_indices.max() + 1)
     score_map = np.zeros(shape, dtype=scores.dtype)
