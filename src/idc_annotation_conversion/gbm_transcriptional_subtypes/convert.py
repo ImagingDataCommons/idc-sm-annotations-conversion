@@ -205,8 +205,8 @@ def convert_aggressiveness_map(
     x_start = sorted_x_vals[0]
     y_start = sorted_y_vals[0]
 
-    spacing_x = diff_x[0]
-    spacing_y = diff_y[0]
+    spacing_x = diff_x.min()
+    spacing_y = diff_y.min()
 
     assert np.all(diff_x % spacing_x == 0)
     assert np.all(diff_y % spacing_y == 0)
