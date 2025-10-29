@@ -114,6 +114,7 @@ segmentation_series_description_2022_fractional = "Stony Brook Inception-V4 Frac
 seg_manufacturer_2022 = "Stony Brook University converted by Imaging Data Commons"
 seg_manufacturer_model_name_2022 = "TIL Inception-V4 2022 converted by Imaging Data Commons"
 
+
 # DOI of the conversion page in Zenodo for other clinical trial protocol
 # These are not yet in pydicom's data dict so we have to set the elements
 # manually

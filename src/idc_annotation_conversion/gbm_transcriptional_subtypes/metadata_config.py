@@ -1,6 +1,7 @@
 """Metadata used for transcriptomic subtype map conversions."""
 import highdicom as hd
 from highdicom.color import CIELabColor
+import pydicom
 from pydicom.sr.codedict import codes
 
 from idc_annotation_conversion.git_utils import (
@@ -144,7 +145,7 @@ pmap_real_world_value_mappings = [
 derived_pixel_contrast = "AI"
 
 pmap_contributing_equipment = [
-        hd.ContributingEquipment(
+    hd.ContributingEquipment(
         manufacturer="Gevaert Lab",
         manufacturer_model_name="GBM360",
         institution_name="Stanford University",
@@ -153,3 +154,27 @@ pmap_contributing_equipment = [
         software_versions="https://github.com/gevaertlab/GBM360/",
     ),
 ]
+
+# DOI of the conversion page in Zenodo for other clinical trial protocol
+# These are not yet in pydicom's data dict so we have to set the elements
+# manually
+# IssuerOfClinicalTrialProtocolID
+issuer_tag = pydicom.tag.Tag(0x0012, 0x0022)
+# OtherClinicalTrialProtocolIDsSequence
+other_trials_seq_tag = pydicom.tag.Tag(0x0012, 0x0023)
+
+clinical_trial_ids_item = pydicom.Dataset()
+issuer_value = "DOI"
+clinical_trial_ids_item.add(
+    pydicom.DataElement(
+        issuer_tag,
+        "LO",
+        issuer_value,
+    )
+)
+clinical_trial_ids_item.ClinicalTrialProtocolID = "10.5281/zenodo.17470190"
+other_trials_seq_element = pydicom.DataElement(
+    other_trials_seq_tag,
+    "SQ",
+    [clinical_trial_ids_item],
+)

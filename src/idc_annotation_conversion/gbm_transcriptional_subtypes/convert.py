@@ -162,6 +162,8 @@ def convert_segmentation(
     seg_time = time() - seg_start_time
     logging.info(f"Created DICOM Segmentation in {seg_time:.1f}s.")
 
+    segmentation.add(metadata_config.other_trials_seq_element)
+
     return segmentation
 
 
@@ -275,5 +277,7 @@ def convert_aggressiveness_map(
             del pmap.PerFrameFunctionalGroupsSequence
 
         pmap.TotalPixelMatrixFocalPlanes = 1
+
+    pmap.add(metadata_config.other_trials_seq_element)
 
     return pmap
