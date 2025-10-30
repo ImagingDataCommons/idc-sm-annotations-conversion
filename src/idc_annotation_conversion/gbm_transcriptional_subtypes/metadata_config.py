@@ -131,7 +131,11 @@ pmap_real_world_value_mappings = [
     hd.pm.RealWorldValueMapping(
         lut_label="Aggressiveness",
         lut_explanation="Aggressiveness scores calculated by a neural network",
-        unit=codes.UCUM.NoUnits,
+        unit=hd.sr.CodedConcept(
+            meaning="range: 0:1",
+            value="{0:1}",
+            scheme_designator="UCUM",
+        ),
         value_range=(0.0, 1.0),
         slope=1.0,
         intercept=0.0,
