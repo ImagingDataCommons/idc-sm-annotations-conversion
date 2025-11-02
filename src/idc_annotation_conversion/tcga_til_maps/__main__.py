@@ -789,11 +789,16 @@ def convert_2022(
             if not 'prediction' in b.name or b.name.endswith('low_res'):
                 continue
 
+            # The meso collection has multiple versions available so choose the
+            # incep4 only
+            if "meso" in b.name and "incep4" not in b.name:
+                continue
+
             if blob_filter is not None:
                 if blob_filter not in b.name:
                     continue
 
-            dir_name = b.name.split('/')[-2]
+            dir_name = b.name.split('/')[-3]
             is_binary = 'binary' in dir_name
 
             container_id = b.name.split('/')[-1].replace('prediction-', '').split('.')[0]
