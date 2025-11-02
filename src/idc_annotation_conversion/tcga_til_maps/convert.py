@@ -221,6 +221,9 @@ def convert_txt_file(
         names=["x", "y", "value", "0"],
     )
 
+    if is_probability:
+        assert df["value"].nunique() > 2
+
     sorted_x_vals = df.sort_values("x").x.unique()
     diff_x = np.diff(sorted_x_vals)
     sorted_y_vals = df.sort_values("y").y.unique()
