@@ -40,7 +40,7 @@ def run_subtype_map_blob(
     store_wsi_dicom: bool = False,
     output_bucket: str | None = None,
 ) -> str | None:
-    """Convert a single PNG blob for the 2018 TIL Maps.
+    """Convert a single transcriptional subtype map blob.
 
     Parameters
     ----------
