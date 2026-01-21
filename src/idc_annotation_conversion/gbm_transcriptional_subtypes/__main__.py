@@ -1,4 +1,4 @@
-"""Main conversion process for GBP transcriptional subtypes."""
+"""Main conversion process for GBM transcriptional subtypes."""
 import datetime
 from concurrent.futures import ProcessPoolExecutor
 import logging
