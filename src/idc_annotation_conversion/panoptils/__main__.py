@@ -125,11 +125,12 @@ def run_png_blob(
     url = selection_df.iloc[0].gcs_url
     im_blob_name = "/".join(url.split("/")[3:])
 
-    wsi_dcm = cloud_io.read_dataset_from_blob(
+    wsi_ds = cloud_io.read_dataset_from_blob(
         im_bucket,
         im_blob_name,
         stop_before_pixels=not store_wsi_dicom,
     )
+    wsi_im = hd.Image.from_dataset(wsi_ds, copy=False)
     logging.info("Pulled WSI image")
 
     # Read the data from the png files
@@ -150,7 +151,7 @@ def run_png_blob(
     region_seg, nuclei_seg, border_seg = convert_segmentation(
         arrays=arrays,
         coords=coords,
-        source_image=wsi_dcm,
+        source_image=wsi_im,
         segmentation_type=segmentation_type,
         include_lut=include_lut,
         container_id=selection_df.ContainerIdentifier.iloc[0],
@@ -173,7 +174,7 @@ def run_png_blob(
 
     if store_wsi_dicom:
         dcm_path = output_dir / f"{container_id}_im.dcm"
-        wsi_dcm.save_as(dcm_path)
+        wsi_im.save_as(dcm_path)
 
     # Store to bucket
     if output_bucket_obj is not None:
@@ -327,11 +328,7 @@ def main(
     logging.info("Listing cases")
     to_process = defaultdict(list)
 
-    for ann_blob in islice(
-        ann_bucket.list_blobs(prefix=MANUAL_PREFIX),
-        1,  # first item is the directory itself
-        number + 1 if number is not None else None,
-    ):
+    for ann_blob in ann_bucket.list_blobs(prefix=MANUAL_PREFIX):
         if not ann_blob.name.endswith(".png"):
             continue
 
@@ -345,6 +342,13 @@ def main(
             seg_output_blob = output_bucket_obj.get_blob(seg_blob_name)
             if seg_output_blob.exists():
                 continue
+
+        if number is not None:
+            if (
+                container_id not in to_process
+                and len(to_process) == number
+            ):
+                break
 
         to_process[container_id].append(ann_blob.name)
 
