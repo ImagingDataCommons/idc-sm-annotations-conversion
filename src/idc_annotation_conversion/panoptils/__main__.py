@@ -2,7 +2,6 @@
 import datetime
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
-from itertools import islice
 import logging
 from pathlib import Path
 import os
@@ -20,9 +19,10 @@ from idc_annotation_conversion.panoptils.convert import (
 from idc_annotation_conversion import cloud_config, cloud_io
 
 
+# TODO fix reference coordinates in plane positions (currently fails highdicom check)
 # TODO check why multiple images are matching
+# TODO crop border cell tiles
 # TODO include bootstrapped versions
-# TODO plane positions
 # TODO metadata
 # TODO include lut
 
