@@ -74,7 +74,7 @@ def convert_segmentation(
     # from the scaling factor between the two array sizes
     seg_spacing = [
         source_spacing[0] * (patch_size / array.shape[1]),
-        source_spacing[0] * (patch_size / array.shape[2]),
+        source_spacing[1] * (patch_size / array.shape[2]),
     ]
 
     seg_geom = hd.VolumeGeometry.from_attributes(
@@ -95,18 +95,18 @@ def convert_segmentation(
     )
 
     source_pix_indices_3d = np.array([[0, t, l] for (t, _, l, _) in coords])
-    seg_pix_indices = source_ind_to_seg_ind_transformer(source_pix_indices_3d)[:, 1:] + 1
+    seg_pix_indices = source_ind_to_seg_ind_transformer(source_pix_indices_3d)
 
     # PlanePositionSequence requires different order convention
-    seg_pix_indices = np.fliplr(seg_pix_indices)
-    ref_coords = source_geom.map_indices_to_reference(source_pix_indices_3d - 1)
+    ref_coords = seg_geom.map_indices_to_reference(seg_pix_indices)
+    pixel_matrix_positions = np.fliplr(seg_pix_indices[:, 1:]) + 1
 
     plane_positions = [
         hd.PlanePositionSequence(
             "SLIDE",
             pixel_matrix_position=pix,
             image_position=ref,
-        ) for pix, ref in zip(seg_pix_indices, ref_coords)
+        ) for pix, ref in zip(pixel_matrix_positions, ref_coords)
     ]
 
     if slice_spacing is None:
