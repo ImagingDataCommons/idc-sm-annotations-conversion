@@ -10,6 +10,12 @@ from typing import Optional
 import click
 from google.cloud import bigquery
 from google.cloud import storage
+from pydicom.uid import (
+    ExplicitVRLittleEndian,
+    JPEG2000Lossless,
+    JPEGLSLossless,
+    RLELossless,
+)
 import highdicom as hd
 
 from idc_annotation_conversion import cloud_io
@@ -41,6 +47,8 @@ def run_png_blob(
     output_bucket: str | None = None,
     segmentation_type: str = "BINARY",
     include_lut: bool = False,
+    transfer_syntax_uid: str = ExplicitVRLittleEndian,
+    crop_total_pixel_matrix: bool = False,
 ) -> str | None:
     """Convert a single h5 blob to an aggressiveness maps.
 
@@ -55,6 +63,15 @@ def run_png_blob(
         Whether to store the original source image after pulling it.
     output_bucket: str | None, optional
         Name of output bucket, if any, to store new parametric maps.
+    transfer_syntax_uid: str
+        Transfer syntax UID for the new segmentations.
+    crop_total_pixel_matrix: bool
+        If True, limit the size of the total pixel matrix of the output
+        segmentation to the area covered by the data. If False, the total pixel
+        matrix is defined to cover the same physical area covered by the source
+        image. Note this does not affect the frames that are stored, just how
+        the total pixel matrix rows and columns are defined, and the positional
+        information of the frames.
 
     Returns
     -------
@@ -155,6 +172,8 @@ def run_png_blob(
         segmentation_type=segmentation_type,
         include_lut=include_lut,
         container_id=selection_df.ContainerIdentifier.iloc[0],
+        transfer_syntax_uid=transfer_syntax_uid,
+        crop_total_pixel_matrix=crop_total_pixel_matrix,
     )
 
     # Store objects to filesystem
@@ -260,11 +279,37 @@ def run_png_blob(
     help="Segmentation type for the Segmentation Image",
 )
 @click.option(
+    "--transfer-syntax-uid",
+    "-x",
+    type=click.Choice(
+        [
+            ExplicitVRLittleEndian,
+            JPEG2000Lossless,
+            JPEGLSLossless,
+            RLELossless,
+        ],
+        case_sensitive=False,
+    ),
+    default=ExplicitVRLittleEndian,
+    show_default=True,
+    help="Transfer syntax for the segmentations",
+)
+@click.option(
     "--include-lut/--no-include-lut",
     "-l/-L",
     default=True,
     show_default=True,
     help="Include a LUT in a labelmap seg.",
+)
+@click.option(
+    "--crop-total-pixel-matrix/--no-crop-total-pixel-matrix",
+    "-c/-C",
+    default=False,
+    show_default=True,
+    help=(
+        "Whether to limit the total pixel matrix of the segmentations to "
+        "the region containing data."
+    ),
 )
 def main(
     number: Optional[int],
@@ -276,6 +321,8 @@ def main(
     keep_existing: bool = False,
     include_lut: bool = True,
     workers: int = 0,
+    transfer_syntax_uid: str = ExplicitVRLittleEndian,
+    crop_total_pixel_matrix: bool = False,
 ):
     """Convert PNG files to DICOM segmentations.
 
@@ -364,6 +411,8 @@ def main(
                 output_dir=output_dir,
                 store_wsi_dicom=store_wsi_dicom,
                 output_bucket=output_bucket,
+                transfer_syntax_uid=transfer_syntax_uid,
+                crop_total_pixel_matrix=crop_total_pixel_matrix,
             )
             for container_id, blobs in to_process.items()
         ]
@@ -380,6 +429,8 @@ def main(
                     output_dir=output_dir,
                     store_wsi_dicom=store_wsi_dicom,
                     output_bucket=output_bucket,
+                    crop_total_pixel_matrix=crop_total_pixel_matrix,
+                    transfer_syntax_uid=transfer_syntax_uid,
                 )
                 futures.append(fut)
 
