@@ -109,21 +109,6 @@ def convert_segmentation(
         round_output=True
     )
 
-    source_pix_indices_3d = np.array([[0, t, l] for (t, _, l, _) in coords])
-    seg_pix_indices = source_ind_to_seg_ind_transformer(source_pix_indices_3d)
-
-    # PlanePositionSequence requires different order convention
-    ref_coords = seg_geom.map_indices_to_reference(seg_pix_indices)
-    pixel_matrix_positions = np.fliplr(seg_pix_indices[:, 1:]) + 1
-
-    plane_positions = [
-        hd.PlanePositionSequence(
-            "SLIDE",
-            pixel_matrix_position=pix,
-            image_position=ref,
-        ) for pix, ref in zip(pixel_matrix_positions, ref_coords)
-    ]
-
     if slice_spacing is None:
         slice_spacing = 0.0
 
@@ -132,6 +117,23 @@ def convert_segmentation(
         spacing_between_slices=slice_spacing,
         slice_thickness=0.0,
     )
+
+    # For the nuclei and borders (1 and 2), annotations only occupy the central
+    # part of the patch. Find suitable coordinates to crop, otherwise the empty
+    # section at the edges can overlap with the central part of another patch
+    # and make the reconstruction process ambiguous
+    max_arr = array[:, :, :, 1:].max(axis=(0, 3))
+    y_indices, x_indices = np.where(max_arr)
+    y_min = y_indices.min()
+    y_max = y_indices.max()
+    x_min = x_indices.min()
+    x_max = x_indices.max()
+    side_length = max(y_max - y_min, x_max - x_min) + 1  # ensure square
+    if side_length % 4 > 0:
+        # Ensure side length is multiple of four. This ensures a multiple of 8
+        # pixels per frame to avoid problems with bit-packing binary
+        # segmentations
+        side_length = side_length - (side_length % 4) + 4
 
     segs = []
 
@@ -166,9 +168,40 @@ def convert_segmentation(
             )
         ]
 
+        channel_array = array[:, :, :, c]
+
+        if c in (1, 2):
+            # Apply cropping for nuclei and borders
+            channel_array = channel_array[
+                :,
+                y_min:y_min + side_length,
+                x_min:x_min + side_length,
+            ]
+            source_pix_indices_3d = np.array(
+                [[0, t + y_min, l + x_min] for (t, _, l, _) in coords]
+            )
+        else:
+            source_pix_indices_3d = np.array(
+                [[0, t, l] for (t, _, l, _) in coords]
+            )
+
+        seg_pix_indices = source_ind_to_seg_ind_transformer(source_pix_indices_3d)
+
+        # PlanePositionSequence requires different order convention
+        ref_coords = seg_geom.map_indices_to_reference(seg_pix_indices)
+        pixel_matrix_positions = np.fliplr(seg_pix_indices[:, 1:]) + 1
+
+        plane_positions = [
+            hd.PlanePositionSequence(
+                "SLIDE",
+                pixel_matrix_position=pix,
+                image_position=ref,
+            ) for pix, ref in zip(pixel_matrix_positions, ref_coords)
+        ]
+
         seg = hd.seg.Segmentation(
             source_images=[source_image],
-            pixel_array=array[:, :, :, c],
+            pixel_array=channel_array,
             segment_descriptions=segment_descriptions,
             series_instance_uid=hd.UID(),
             series_number=20 + c,
