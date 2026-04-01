@@ -129,6 +129,7 @@ def main():
             device_serial_number=metadata_config.device_serial_number,
             content_description=metadata_config.content_description,
             software_versions=metadata_config.software_versions,
+            contributing_equipment=metadata_config.contributing_equipment,
         )
         ann_dcm.save_as(slide_filename.replace(".svs", '_ann.dcm'))
 

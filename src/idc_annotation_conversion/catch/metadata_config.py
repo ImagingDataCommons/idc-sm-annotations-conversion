@@ -1,5 +1,7 @@
 """Metadata for the Catch conversions."""
 from highdicom.sr import CodedConcept
+from highdicom.base_content import ContributingEquipment
+from pydicom.sr.codedict import codes
 from idc_annotation_conversion.git_utils import (
     get_git_remote_url,
     get_git_commit_hash,
@@ -13,6 +15,15 @@ content_label = "REGIONS"
 content_description = "Description"
 software_versions = get_git_remote_url(simplify=True)
 device_serial_number = get_git_commit_hash()
+
+contributing_equipment = [
+    ContributingEquipment(
+        manufacturer="Friedrich-Alexander-Universität Erlangen-Nürnberg",
+        manufacturer_model_name="SlideRunner",
+        purpose_of_reference=codes.DCM.AcquisitionEquipment,
+        contribution_description="Annotation tool used to acquire manual annotations."
+    ),
+]
 
 
 finding_codes = {
