@@ -44,11 +44,11 @@ finding_codes = {
 
 
 category_codes = {
-    "Bone": codes.SCT.AnatomicStructure,
-    "Cartilage": codes.SCT.AnatomicStructure,
-    "Dermis": codes.SCT.AnatomicStructure,
-    "Epidermis": codes.SCT.AnatomicStructure,
-    "Subcutis": codes.SCT.AnatomicStructure,
+    "Bone": codes.SCT.AnatomicalStructure,
+    "Cartilage": codes.SCT.AnatomicalStructure,
+    "Dermis": codes.SCT.AnatomicalStructure,
+    "Epidermis": codes.SCT.AnatomicalStructure,
+    "Subcutis": codes.SCT.AnatomicalStructure,
     "Inflamm/Necrosis": codes.SCT.MorphologicallyAbnormalStructure,
     "Melanoma": codes.SCT.MorphologicallyAbnormalStructure,
     "Plasmacytoma": codes.SCT.MorphologicallyAbnormalStructure,
