@@ -1,3 +1,7 @@
+import datetime
+from itertools import islice
+import logging
+from pathlib import Path
 import sqlite3
 
 import click
@@ -5,18 +9,15 @@ from google.cloud import storage
 import highdicom as hd
 import numpy as np
 
-from idc_annotation_conversion import cloud_io
+from idc_annotation_conversion import cloud_io, cloud_config
 from idc_annotation_conversion.catch import metadata_config
-
-
-# TODO read input sqlite file from bucket
-# TODO output to bucket
-# TODO metadata
 
 
 IMAGES_BUCKET_PROJECT = "idc-converted-data"
 IMAGES_BUCKET = "catch-pathology"
 
+ANNOTATIONS_BUCKET_PROJECT = "idc-source-data"
+ANNOTATIONS_BUCKET = "catch_pathology_annotations"
 
 SLIDERUNNER_TYPE_GRAPHIC_TYPE_MAP = {
     1: hd.ann.GraphicTypeValues.POINT,
@@ -25,7 +26,49 @@ SLIDERUNNER_TYPE_GRAPHIC_TYPE_MAP = {
 }
 
 
-def main():
+@click.command()
+@click.option(
+    "--number",
+    "-n",
+    type=int,
+    help="Number of annotations to process. All by default.",
+)
+@click.option(
+    "--output-dir",
+    "-o",
+    type=click.Path(path_type=Path, file_okay=False),
+    help="Output directory, default: no output directory",
+)
+@click.option(
+    "--output-bucket",
+    "-b",
+    help="Output bucket",
+    show_default=True,
+)
+@click.option(
+    "--store-bucket/--no-store-bucket",
+    "-k/-K",
+    help="Whether to store outputs to the bucket in this run.",
+    default=True,
+    show_default=True,
+)
+@click.option(
+    "--store-wsi-dicom/--no-store-wsi-dicom",
+    "-d/-D",
+    default=False,
+    show_default=True,
+    help=(
+        "Download all WSI DICOM files and store in the output directory "
+        "(if any)."
+    ),
+)
+def main(
+    number: int | None,
+    output_dir: Path | None,
+    output_bucket: str | None,
+    store_bucket: bool,
+    store_wsi_dicom: bool,
+):
     """Convert manual annotations from the Canine Cutaneous Cancer Histology dataset
     to DICOM Microscopy Bulk Simple Annotations
 
@@ -34,17 +77,42 @@ def main():
     Annotations are originally in a SQLITE database created by the SlideRunner software.
 
     """
-    # TODO download this first
-    db = sqlite3.connect("file:///Users/cpb28/Developer/idc-annotation-conversion/CATCH.sqlite")
-
-    slide_query = (
-        "SELECT uid, filename FROM Slides;"
-    )
-
     image_storage_client = storage.Client(project=IMAGES_BUCKET_PROJECT)
     image_bucket = image_storage_client.bucket(IMAGES_BUCKET)
 
-    for slide_id, slide_filename in db.execute(slide_query):
+    annotations_storage_client = storage.Client(project=ANNOTATIONS_BUCKET_PROJECT)
+    annotations_bucket = annotations_storage_client.bucket(ANNOTATIONS_BUCKET)
+
+    output_client = storage.Client(project=cloud_config.OUTPUT_GCP_PROJECT_ID)
+    if store_bucket:
+        if output_bucket is None:
+            today = datetime.date.today()
+            output_bucket = f"catch-annotations-{today}"
+
+        output_bucket_obj = output_client.bucket(output_bucket)
+
+        if not output_bucket_obj.exists():
+            output_bucket_obj.create(
+                location=cloud_config.GCP_DEFAULT_LOCATION
+            )
+    else:
+        output_bucket_obj = None
+
+    # Create output directory
+    if output_dir is not None:
+        output_dir.mkdir(exist_ok=True)
+
+    annotations_db_blob = annotations_bucket.blob("CATCH.sqlite")
+    db_file = Path.cwd() / "CATCH.sqlite"
+
+    if not db_file.exists():
+        annotations_db_blob.download_to_file(db_file)
+
+    db = sqlite3.connect(db_file)
+
+    slide_query = "SELECT uid, filename FROM Slides;"
+
+    for slide_id, slide_filename in islice(db.execute(slide_query), number):
 
         slide_name = slide_filename.replace('.svs', '')
         image_blob_name = f"{slide_name}/DCM_0"
@@ -52,7 +120,7 @@ def main():
         image_dcm = cloud_io.read_dataset_from_blob(
             image_bucket,
             image_blob_name,
-            stop_before_pixels=True,
+            stop_before_pixels=not store_wsi_dicom,
         )
 
         # Each distinct combination of annotation type and class will become
@@ -131,7 +199,33 @@ def main():
             software_versions=metadata_config.software_versions,
             contributing_equipment=metadata_config.contributing_equipment,
         )
-        ann_dcm.save_as(slide_filename.replace(".svs", '_ann.dcm'))
+
+        ann_name = slide_filename.replace(".svs", '_ann.dcm')
+        im_name = slide_filename.replace(".svs", '_im.dcm')
+
+        # Store objects to filesystem
+        if output_dir is not None:
+            out_path = output_dir / ann_name
+            logging.info(f"Writing annotation to {str(out_path)}.")
+            ann_dcm.save_as(out_path)
+
+            if store_wsi_dicom:
+                slide_path = output_dir / im_name
+                image_dcm.save_as(slide_path)
+
+        # Store to bucket
+        if output_bucket_obj is not None:
+            logging.info("Writing objects to output bucket.")
+            cloud_io.write_dataset_to_blob(
+                ann_dcm,
+                output_bucket_obj,
+                ann_name,
+            )
+            cloud_io.write_dataset_to_blob(
+                image_dcm,
+                output_bucket_obj,
+                im_name,
+            )
 
 
 if __name__ == "__main__":
