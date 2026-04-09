@@ -9,15 +9,15 @@ from idc_annotation_conversion.git_utils import (
 )
 
 manufacturer = "Friedrich-Alexander-Universität Erlangen-Nürnberg converted by Imaging Data Commons"
-manufacturer_model_name = "SlideRunner"
+manufacturer_model_name = "Annotations"
 series_description = "Manual Region Annotations of Tumor and Tissue"
 content_creator_name = PersonName.from_named_components(
     family_name="Fragoso",
     given_name="Marco"
 )
 series_number = 201
-content_label = "REGIONS"
-content_description = "Description"
+content_label = "ANNOTATIONS"
+content_description = None
 software_versions = get_git_remote_url(simplify=True)
 device_serial_number = get_git_commit_hash()
 
