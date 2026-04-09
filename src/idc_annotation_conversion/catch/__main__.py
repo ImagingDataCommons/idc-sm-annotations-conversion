@@ -72,7 +72,8 @@ def main(
     """Convert manual annotations from the Canine Cutaneous Cancer Histology dataset
     to DICOM Microscopy Bulk Simple Annotations
 
-    https://doi.org/10.7937/TCIA.2M93-FX66
+    TCIA Link: https://doi.org/10.7937/TCIA.2M93-FX66
+    Paper: https://www.nature.com/articles/s41597-020-00756-z
 
     Annotations are originally in a SQLITE database created by the SlideRunner software.
 
