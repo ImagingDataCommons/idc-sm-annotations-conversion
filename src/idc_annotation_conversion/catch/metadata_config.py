@@ -2,14 +2,19 @@
 from highdicom.sr import CodedConcept
 from highdicom.base_content import ContributingEquipment
 from pydicom.sr.codedict import codes
+from pydicom.valuerep import PersonName
 from idc_annotation_conversion.git_utils import (
     get_git_remote_url,
     get_git_commit_hash,
 )
 
-manufacturer = "Manufacturer"
-manufacturer_model_name = "Model Name"
-series_description = "Region Annotations"
+manufacturer = "Friedrich-Alexander-Universität Erlangen-Nürnberg converted by Imaging Data Commons"
+manufacturer_model_name = "SlideRunner"
+series_description = "Manual Region Annotations of Tumor and Tissue"
+content_creator_name = PersonName.from_named_components(
+    family_name="Fragoso",
+    given_name="Marco"
+)
 series_number = 201
 content_label = "REGIONS"
 content_description = "Description"

@@ -73,7 +73,7 @@ def main(
     to DICOM Microscopy Bulk Simple Annotations
 
     TCIA Link: https://doi.org/10.7937/TCIA.2M93-FX66
-    Paper: https://www.nature.com/articles/s41597-020-00756-z
+    Paper: https://www.nature.com/articles/s41597-022-01692-w.pdf
 
     Annotations are originally in a SQLITE database created by the SlideRunner software.
 
@@ -199,6 +199,7 @@ def main(
             content_description=metadata_config.content_description,
             software_versions=metadata_config.software_versions,
             contributing_equipment=metadata_config.contributing_equipment,
+            content_creator_name=metadata_config.content_creator_name,
         )
 
         ann_name = slide_filename.replace(".svs", '_ann.dcm')
