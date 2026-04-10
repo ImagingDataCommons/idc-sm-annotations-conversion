@@ -9,7 +9,7 @@ from idc_annotation_conversion.git_utils import (
     get_git_commit_hash,
 )
 
-manufacturer = "Friedrich-Alexander-Universität Erlangen-Nürnberg converted by Imaging Data Commons"
+manufacturer = "Friedrich-Alexander-Universität Erlangen-Nürnberg converted by IDC"
 manufacturer_model_name = "Annotations"
 series_description = "Manual Region Annotations of Tumor and Tissue"
 content_creator_name = PersonName.from_named_components(
