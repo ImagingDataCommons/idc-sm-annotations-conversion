@@ -7,6 +7,7 @@ import sqlite3
 import click
 from google.cloud import storage
 import highdicom as hd
+from highdicom.sr import MeasurementsAndQualitativeEvaluations
 import numpy as np
 
 from idc_annotation_conversion import cloud_io, cloud_config
@@ -201,6 +202,11 @@ def main(
             contributing_equipment=metadata_config.contributing_equipment,
             content_creator_name=metadata_config.content_creator_name,
         )
+
+        # Override collection DOI
+        ann_dcm.OtherClinicalTrialProtocolIDsSequence = [
+            metadata_config.clinical_trial_ids_item
+        ]
 
         ann_name = slide_filename.replace(".svs", '_ann.dcm')
         im_name = slide_filename.replace(".svs", '_im.dcm')

@@ -1,6 +1,7 @@
 """Metadata for the Catch conversions."""
 from highdicom.sr import CodedConcept
 from highdicom.base_content import ContributingEquipment
+import pydicom
 from pydicom.sr.codedict import codes
 from pydicom.valuerep import PersonName
 from idc_annotation_conversion.git_utils import (
@@ -30,6 +31,9 @@ contributing_equipment = [
     ),
 ]
 
+clinical_trial_ids_item = pydicom.Dataset()
+clinical_trial_ids_item.IssuerOfClinicalTrialProtocolID = "DOI"
+clinical_trial_ids_item.ClinicalTrialProtocolID = "doi:10.5281/zenodo.19488392"
 
 finding_codes = {
     "Bone": codes.SCT.Bone,
@@ -37,7 +41,7 @@ finding_codes = {
     "Dermis": CodedConcept('53534000', 'SCT', 'Dermis'),
     "Epidermis": CodedConcept('55988001', 'SCT', 'Epidermis'),
     "Subcutis": CodedConcept('71966008', 'SCT', 'Subcutis'),
-    "Inflamm/Necrosis": codes.SCT.Necrosis,
+    "Inflamm/Necrosis": CodedConcept('316010', '99MP', 'Inflammation and/or necrosis'),
     "Melanoma": codes.SCT.MalignantMelanoma,
     "Plasmacytoma": codes.SCT.Plasmacytoma,
     "Mast Cell Tumor": CodedConcept('89796001', 'SCT', 'Mastocytoma'),
