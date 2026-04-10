@@ -108,7 +108,8 @@ def main(
     db_file = Path.cwd() / "CATCH.sqlite"
 
     if not db_file.exists():
-        annotations_db_blob.download_to_file(db_file)
+        with db_file.open("wb") as f:
+            annotations_db_blob.download_to_file(f)
 
     db = sqlite3.connect(db_file)
 
@@ -229,11 +230,12 @@ def main(
                 output_bucket_obj,
                 ann_name,
             )
-            cloud_io.write_dataset_to_blob(
-                image_dcm,
-                output_bucket_obj,
-                im_name,
-            )
+            if store_wsi_dicom:
+                cloud_io.write_dataset_to_blob(
+                    image_dcm,
+                    output_bucket_obj,
+                    im_name,
+                )
 
 
 if __name__ == "__main__":
