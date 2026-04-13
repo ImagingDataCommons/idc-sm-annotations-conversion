@@ -7,7 +7,6 @@ import sqlite3
 import click
 from google.cloud import storage
 import highdicom as hd
-from highdicom.sr import MeasurementsAndQualitativeEvaluations
 import numpy as np
 
 from idc_annotation_conversion import cloud_io, cloud_config
@@ -208,6 +207,10 @@ def main(
         ann_dcm.OtherClinicalTrialProtocolIDsSequence = [
             metadata_config.clinical_trial_ids_item
         ]
+
+        # Override character set to use unicode (for correct encoding of
+        # umlauts and to match source images)
+        ann_dcm.SpecificCharacterSet = "ISO_IR 192"
 
         ann_name = slide_filename.replace(".svs", '_ann.dcm')
         im_name = slide_filename.replace(".svs", '_im.dcm')
