@@ -82,8 +82,6 @@ def convert_segmentation(
     else:
         seg_position = source_geom.position
 
-    # Create a transformer that maps total pixel matrix indices to frame of
-    # reference coordinate locations
     source_spacing = source_geom.pixel_spacing
     slice_spacing = source_geom.spacing_between_slices
 
@@ -106,7 +104,7 @@ def convert_segmentation(
     source_ind_to_seg_ind_transformer = hd.VolumeToVolumeTransformer(
         source_geom,
         seg_geom,
-        round_output=True
+        round_output=False,
     )
 
     if slice_spacing is None:
@@ -134,6 +132,10 @@ def convert_segmentation(
         # pixels per frame to avoid problems with bit-packing binary
         # segmentations
         side_length = side_length - (side_length % 4) + 4
+
+    # Calculate the offset in 
+    y_min_scaled = y_min * scale_y
+    x_min_scaled = x_min * scale_x
 
     segs = []
 
@@ -178,7 +180,7 @@ def convert_segmentation(
                 x_min:x_min + side_length,
             ]
             source_pix_indices_3d = np.array(
-                [[0, t + y_min, l + x_min] for (t, _, l, _) in coords]
+                [[0, t + y_min_scaled, l + x_min_scaled] for (t, _, l, _) in coords]
             )
         else:
             source_pix_indices_3d = np.array(
@@ -186,6 +188,7 @@ def convert_segmentation(
             )
 
         seg_pix_indices = source_ind_to_seg_ind_transformer(source_pix_indices_3d)
+        seg_pix_indices = np.round(seg_pix_indices).astype(np.uint32)
 
         # PlanePositionSequence requires different order convention
         ref_coords = seg_geom.map_indices_to_reference(seg_pix_indices)
