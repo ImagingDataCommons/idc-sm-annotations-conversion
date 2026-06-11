@@ -239,3 +239,121 @@ seg_manufacturer = "Manufacturer"
 seg_manufacturer_model_name = "Model Name"
 software_versions = get_git_remote_url(simplify=True)
 device_serial_number = get_git_commit_hash()
+
+
+csv_finding_codes = {
+    'ActiveStromalCellNOS': (
+        hd.sr.CodedConcept(
+            meaning="Connective tissue",
+            value="181769001",
+            scheme_designator="SCT",
+        ),
+        hd.sr.CodedConcept(
+            meaning="Body substance",
+            value="91720002",
+            scheme_designator="SCT",
+        ),
+    ),
+    'ActiveTILsCell': (
+        hd.sr.CodedConcept(
+            meaning="Connective tissue",
+            value="181769001",
+            scheme_designator="SCT",
+        ),
+        hd.sr.CodedConcept(
+            meaning="Body substance",
+            value="91720002",
+            scheme_designator="SCT",
+        ),
+    ),
+    'CancerEpithelium': (
+        hd.sr.CodedConcept(
+            meaning="Connective tissue",
+            value="181769001",
+            scheme_designator="SCT",
+        ),
+        hd.sr.CodedConcept(
+            meaning="Body substance",
+            value="91720002",
+            scheme_designator="SCT",
+        ),
+    ),
+    'NormalEpithelium': (
+        hd.sr.CodedConcept(
+            meaning="Connective tissue",
+            value="181769001",
+            scheme_designator="SCT",
+        ),
+        hd.sr.CodedConcept(
+            meaning="Body substance",
+            value="91720002",
+            scheme_designator="SCT",
+        ),
+    ),
+    'OtherCell': (
+        hd.sr.CodedConcept(
+            meaning="Connective tissue",
+            value="181769001",
+            scheme_designator="SCT",
+        ),
+        hd.sr.CodedConcept(
+            meaning="Body substance",
+            value="91720002",
+            scheme_designator="SCT",
+        ),
+    ),
+    'StromalCellNOS': (
+        hd.sr.CodedConcept(
+            meaning="Connective tissue",
+            value="181769001",
+            scheme_designator="SCT",
+        ),
+        hd.sr.CodedConcept(
+            meaning="Body substance",
+            value="91720002",
+            scheme_designator="SCT",
+        ),
+    ),
+    'TILsCell': (
+        hd.sr.CodedConcept(
+            meaning="Connective tissue",
+            value="181769001",
+            scheme_designator="SCT",
+        ),
+        hd.sr.CodedConcept(
+            meaning="Body substance",
+            value="91720002",
+            scheme_designator="SCT",
+        ),
+    ),
+    'UnknownOrAmbiguousCell': (
+        hd.sr.CodedConcept(
+            meaning="Connective tissue",
+            value="181769001",
+            scheme_designator="SCT",
+        ),
+        hd.sr.CodedConcept(
+            meaning="Body substance",
+            value="91720002",
+            scheme_designator="SCT",
+        ),
+    ),
+}
+
+
+# From fig 3 in the paper
+ann_color_mapping = {
+    'ActiveStromalCellNOS': hd.color.CIELabColor.from_string("mediumorchid"),
+    'ActiveTILsCell': hd.color.CIELabColor.from_string("royalblue"),
+    'CancerEpithelium': hd.color.CIELabColor.from_string("darkmagenta"),
+    'NormalEpithelium': hd.color.CIELabColor.from_string("green"),
+    'OtherCell': hd.color.CIELabColor.from_string("dimgray"),
+    'StromalCellNOS': hd.color.CIELabColor.from_string("plum"),
+    'TILsCell': hd.color.CIELabColor.from_string("royalblue"),
+    'UnknownOrAmbiguousCell': hd.color.CIELabColor.from_string("gray"),
+}
+
+ann_manufacturer = "Manufacturer"
+ann_manufacturer_model_name = "Model Name"
+ann_content_description = "Content"
+ann_series_description = "Annotations"

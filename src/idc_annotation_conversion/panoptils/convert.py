@@ -3,7 +3,16 @@ import numpy as np
 from typing import cast
 from pydicom.uid import ExplicitVRLittleEndian
 
+import pandas as pd
 from idc_annotation_conversion.panoptils import metadata_config
+
+
+# Mapping from graphic type ('type' column) in the CSVs to DICOM graphic type
+GRAPHIC_TYPE_MAPPING = {
+    "polyline": hd.ann.GraphicTypeValues.POLYGON,
+    "rectangle": hd.ann.GraphicTypeValues.RECTANGLE,
+    "point": hd.ann.GraphicTypeValues.POINT,
+}
 
 
 def convert_segmentation(
@@ -236,3 +245,81 @@ def convert_segmentation(
         segs.append(seg)
 
     return tuple(segs)
+
+
+def convert_annotation(
+    dataframes: list[pd.DataFrame],
+    coords: list[tuple[int, int, int, int]],
+    source_image: hd.Image,
+    annotation_coordinate_type: str,
+) -> list[hd.ann.MicroscopyBulkSimpleAnnotations]:
+
+    ann_objects = []
+
+    for df, coord_offset in zip(dataframes, coords):
+
+        ann_groups = []
+        t, b, l, r = coord_offset
+
+        for n, ((label, ann_type), sub_df) in enumerate(df.groupby(['group', 'type']), 1):
+
+            graphic_type = GRAPHIC_TYPE_MAPPING[ann_type]
+
+            all_graphic_data = []
+            for _, row in sub_df.iterrows():
+
+                x = np.array([int(s) for s in row['coords_x'].split(',')])
+                y = np.array([int(s) for s in row['coords_y'].split(',')])
+
+                # TODO apply scaling here too
+                x = l + x
+                y = t + y
+
+                graphic_data = np.stack([x, y]).T
+
+                # graphic data must not duplicate the final point
+                # (implicitly closed). Remove duplicates from the end to ensure
+                # this. Sometimes there are many duplicates
+                while np.array_equal(
+                    graphic_data[0],
+                    graphic_data[-1]
+                ) and len(graphic_data) > 1:
+                    graphic_data = graphic_data[:-1]
+
+                all_graphic_data.append(graphic_data)
+
+            property_category, property_type = metadata_config.csv_finding_codes[label]
+
+            ann_groups.append(
+                hd.ann.AnnotationGroup(
+                    number=n,
+                    uid=hd.UID(),
+                    label=f"{label} ({ann_type})",
+                    annotated_property_type=property_type,
+                    annotated_property_category=property_category,
+                    algorithm_type=hd.ann.AnnotationGroupGenerationTypeValues.MANUAL,
+                    graphic_type=graphic_type,
+                    graphic_data=all_graphic_data,
+                    display_color=metadata_config.ann_color_mapping[label],
+                )
+            )
+
+        ann_objects.append(
+            hd.ann.MicroscopyBulkSimpleAnnotations(
+                source_images=[source_image],
+                annotation_coordinate_type=annotation_coordinate_type,
+                annotation_groups=ann_groups,
+                series_instance_uid=hd.UID(),
+                series_number=30,
+                sop_instance_uid=hd.UID(),
+                instance_number=1,
+                manufacturer=metadata_config.ann_manufacturer,
+                manufacturer_model_name=metadata_config.ann_manufacturer_model_name,
+                software_versions=metadata_config.software_versions,
+                device_serial_number=metadata_config.device_serial_number,
+                content_description=metadata_config.ann_content_description,
+                series_description=metadata_config.ann_series_description,
+            )
+        )
+
+    return ann_objects
