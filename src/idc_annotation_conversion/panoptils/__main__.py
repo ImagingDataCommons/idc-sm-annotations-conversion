@@ -169,7 +169,7 @@ def run_png_blob(
         for b in annotation_blobs
     ]
 
-    region_seg, nuclei_seg, border_seg = convert_segmentation(
+    all_segs = convert_segmentation(
         arrays=arrays,
         coords=coords,
         source_image=wsi_im,
@@ -180,43 +180,46 @@ def run_png_blob(
         crop_total_pixel_matrix=crop_total_pixel_matrix,
     )
 
-    # Store objects to filesystem
-    if output_dir is not None:
-
-        out_path = output_dir / f"{container_id}_nuclei_seg.dcm"
-        logging.info(f"Writing segmentation to {str(out_path)}.")
-        nuclei_seg.save_as(out_path)
-
-        out_path = output_dir / f"{container_id}_border_seg.dcm"
-        logging.info(f"Writing segmentation to {str(out_path)}.")
-        border_seg.save_as(out_path)
-
-        out_path = output_dir / f"{container_id}_region_seg.dcm"
-        logging.info(f"Writing segmentation to {str(out_path)}.")
-        region_seg.save_as(out_path)
-
-    if store_wsi_dicom:
+    if store_wsi_dicom and output_dir is not None:
         dcm_path = output_dir / f"{container_id}_im.dcm"
         wsi_im.save_as(dcm_path)
 
-    # Store to bucket
-    if output_bucket_obj is not None:
-        logging.info("Writing segmentations to output bucket.")
-        cloud_io.write_dataset_to_blob(
-            border_seg,
-            output_bucket_obj,
-            f"{container_id}_border_seg.dcm",
-        )
-        cloud_io.write_dataset_to_blob(
-            nuclei_seg,
-            output_bucket_obj,
-            f"{container_id}_nuclei_seg.dcm",
-        )
-        cloud_io.write_dataset_to_blob(
-            region_seg,
-            output_bucket_obj,
-            f"{container_id}_region_seg.dcm",
-        )
+    for (region_seg, nuclei_seg, border_seg), blob in zip(all_segs, annotation_blobs):
+        # Store objects to filesystem
+        output_stem = blob.replace('.png', '').split('/')[-1]
+
+        if output_dir is not None:
+
+            out_path = output_dir / (output_stem + '_nuclei_seg.dcm')
+            logging.info(f"Writing segmentation to {str(out_path)}.")
+            nuclei_seg.save_as(out_path)
+
+            out_path = output_dir / (output_stem + '_border_seg.dcm')
+            logging.info(f"Writing segmentation to {str(out_path)}.")
+            border_seg.save_as(out_path)
+
+            out_path = output_dir / (output_stem + '_region_seg.dcm')
+            logging.info(f"Writing segmentation to {str(out_path)}.")
+            region_seg.save_as(out_path)
+
+        # Store to bucket
+        if output_bucket_obj is not None:
+            logging.info("Writing segmentations to output bucket.")
+            cloud_io.write_dataset_to_blob(
+                border_seg,
+                output_bucket_obj,
+                f"{output_stem}_border_seg.dcm",
+            )
+            cloud_io.write_dataset_to_blob(
+                nuclei_seg,
+                output_bucket_obj,
+                f"{output_stem}_nuclei_seg.dcm",
+            )
+            cloud_io.write_dataset_to_blob(
+                region_seg,
+                output_bucket_obj,
+                f"{output_stem}_region_seg.dcm",
+            )
 
     return error
 

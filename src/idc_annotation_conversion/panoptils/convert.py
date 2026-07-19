@@ -24,7 +24,7 @@ def convert_segmentation(
     container_id: str,
     transfer_syntax_uid: str = ExplicitVRLittleEndian,
     crop_total_pixel_matrix: bool = False,
-) -> tuple[hd.seg.Segmentation, hd.seg.Segmentation, hd.seg.Segmentation]:
+) -> list[tuple[hd.seg.Segmentation, hd.seg.Segmentation, hd.seg.Segmentation]]:
     """Convert input array to DICOM Segmentations.
 
     Parameters
@@ -62,23 +62,19 @@ def convert_segmentation(
 
     Returns
     -------
-    highdicom.seg.Segmentation:
-        Output segmentation containing the tissues.
-    highdicom.seg.Segmentation:
-        Output segmentation containing the nuclei.
-    highdicom.seg.Segmentation:
-        Output segmentation containing the boundaries.
+    list[tuple[highdicom.seg.Segmentation, highdicom.seg.Segmentation, highdicom.seg.Segmentation]]:
+        List of output DICOM segmentations. Each item of the list corresponds
+        to one of the regions in the slide, and contains a tuple of three
+        Segmentations for (tissues, nuclei, boundaries).
 
     """
-    array = np.stack(arrays)
-
     t, b, l, r = coords[0]
     patch_size = b - t
 
     # Pixel-level scaling factor between source image pixels and segmentation
     # image pixels
-    scale_y = patch_size / array.shape[1]
-    scale_x = patch_size / array.shape[2]
+    scale_y = patch_size / arrays[0].shape[0]
+    scale_x = patch_size / arrays[0].shape[1]
 
     source_geom = cast(hd.VolumeGeometry, source_image.get_volume_geometry())
 
@@ -125,126 +121,99 @@ def convert_segmentation(
         slice_thickness=0.0,
     )
 
-    # For the nuclei and borders (1 and 2), annotations only occupy the central
-    # part of the patch. Find suitable coordinates to crop, otherwise the empty
-    # section at the edges can overlap with the central part of another patch
-    # and make the reconstruction process ambiguous
-    max_arr = array[:, :, :, 1:].max(axis=(0, 3))
-    y_indices, x_indices = np.where(max_arr)
-    y_min = y_indices.min()
-    y_max = y_indices.max()
-    x_min = x_indices.min()
-    x_max = x_indices.max()
-    side_length = max(y_max - y_min, x_max - x_min) + 1  # ensure square
-    if side_length % 4 > 0:
-        # Ensure side length is multiple of four. This ensures a multiple of 8
-        # pixels per frame to avoid problems with bit-packing binary
-        # segmentations
-        side_length = side_length - (side_length % 4) + 4
-
-    # Calculate the offset in 
-    y_min_scaled = y_min * scale_y
-    x_min_scaled = x_min * scale_x
-
     segs = []
 
-    # Loop over the three channels. Each creates its own Segmentation instance
-    for c, desc, finding_codes in zip(
-        range(3),
-        [
-            metadata_config.region_series_description,
-            metadata_config.nuclei_series_description,
-            metadata_config.border_series_description,
-        ],
-        [
-            metadata_config.region_finding_codes,
-            metadata_config.nuclei_finding_codes,
-            metadata_config.border_finding_codes,
-        ],
-    ):
-        # Loop over all the segments within this input channel to create
-        # segment descriptions
-        segment_descriptions = [
-            hd.seg.SegmentDescription(
-                segment_number=number,
-                segment_label=label,
-                segmented_property_category=cat_code,
-                segmented_property_type=prop_code,
-                algorithm_type=hd.seg.SegmentAlgorithmTypeValues.MANUAL,
-                tracking_id=f"{container_id}-{label}",
-                tracking_uid=hd.UID(),
-            ) for (number, (label, (prop_code, cat_code))) in enumerate(
-                finding_codes.items(),
-                start=1
-            )
-        ]
+    source_pix_indices_3d = np.array(
+        [[0, t, l] for (t, _, l, _) in coords]
+    )
 
-        channel_array = array[:, :, :, c]
+    seg_pix_indices = source_ind_to_seg_ind_transformer(source_pix_indices_3d)
+    seg_pix_indices = np.round(seg_pix_indices).astype(np.uint32)
 
-        if c in (1, 2):
-            # Apply cropping for nuclei and borders
-            channel_array = channel_array[
-                :,
-                y_min:y_min + side_length,
-                x_min:x_min + side_length,
+    # PlanePositionSequence requires different order convention
+    ref_coords = seg_geom.map_indices_to_reference(seg_pix_indices)
+    pixel_matrix_positions = np.fliplr(seg_pix_indices[:, 1:]) + 1
+
+    plane_positions = [
+        hd.PlanePositionSequence(
+            "SLIDE",
+            pixel_matrix_position=pix,
+            image_position=ref,
+        ) for pix, ref in zip(pixel_matrix_positions, ref_coords)
+    ]
+
+    for patch_array, patch_pos in zip(arrays, plane_positions):
+        patch_segs = []
+
+        # Loop over the three channels. Each creates its own Segmentation instance
+        for c, desc, finding_codes in zip(
+            range(3),
+            [
+                metadata_config.region_series_description,
+                metadata_config.nuclei_series_description,
+                metadata_config.border_series_description,
+            ],
+            [
+                metadata_config.region_finding_codes,
+                metadata_config.nuclei_finding_codes,
+                metadata_config.border_finding_codes,
+            ],
+        ):
+            # Loop over all the segments within this input channel to create
+            # segment descriptions
+            segment_descriptions = [
+                hd.seg.SegmentDescription(
+                    segment_number=number,
+                    segment_label=label,
+                    segmented_property_category=cat_code,
+                    segmented_property_type=prop_code,
+                    algorithm_type=hd.seg.SegmentAlgorithmTypeValues.MANUAL,
+                    tracking_id=f"{container_id}-{label}",
+                    tracking_uid=hd.UID(),
+                ) for (number, (label, (prop_code, cat_code))) in enumerate(
+                    finding_codes.items(),
+                    start=1
+                )
             ]
-            source_pix_indices_3d = np.array(
-                [[0, t + y_min_scaled, l + x_min_scaled] for (t, _, l, _) in coords]
-            )
-        else:
-            source_pix_indices_3d = np.array(
-                [[0, t, l] for (t, _, l, _) in coords]
-            )
 
-        seg_pix_indices = source_ind_to_seg_ind_transformer(source_pix_indices_3d)
-        seg_pix_indices = np.round(seg_pix_indices).astype(np.uint32)
+            channel_array = patch_array[:, :, c]
 
-        # PlanePositionSequence requires different order convention
-        ref_coords = seg_geom.map_indices_to_reference(seg_pix_indices)
-        pixel_matrix_positions = np.fliplr(seg_pix_indices[:, 1:]) + 1
-
-        plane_positions = [
-            hd.PlanePositionSequence(
-                "SLIDE",
-                pixel_matrix_position=pix,
-                image_position=ref,
-            ) for pix, ref in zip(pixel_matrix_positions, ref_coords)
-        ]
-
-        seg = hd.seg.Segmentation(
-            source_images=[source_image],
-            pixel_array=channel_array,
-            segment_descriptions=segment_descriptions,
-            series_instance_uid=hd.UID(),
-            series_number=20 + c,
-            sop_instance_uid=hd.UID(),
-            series_description=desc,
-            instance_number=1,
-            segmentation_type=segmentation_type,
-            manufacturer=metadata_config.seg_manufacturer,
-            manufacturer_model_name=metadata_config.seg_manufacturer_model_name,
-            software_versions=metadata_config.software_versions,
-            device_serial_number=metadata_config.device_serial_number,
-            transfer_syntax_uid=transfer_syntax_uid,
-            dimension_organization_type="TILED_SPARSE",
-            plane_positions=plane_positions,
-            pixel_measures=pixel_measures,
-        )
-
-        if not crop_total_pixel_matrix:
-            # Post-process to set the total pixel matrix of the segmentation to
-            # the same physical size as that of the source image. TODO
-            # incorporate this option into highdicom
-            seg.TotalPixelMatrixRows = int(
-                np.round(source_image.TotalPixelMatrixRows / scale_y)
-            )
-            seg.TotalPixelMatrixColumns = int(
-                np.round(source_image.TotalPixelMatrixColumns / scale_x)
+            seg = hd.seg.Segmentation(
+                source_images=[source_image],
+                pixel_array=channel_array,
+                segment_descriptions=segment_descriptions,
+                series_instance_uid=hd.UID(),
+                series_number=20 + c,
+                sop_instance_uid=hd.UID(),
+                series_description=desc,
+                instance_number=1,
+                segmentation_type=segmentation_type,
+                manufacturer=metadata_config.seg_manufacturer,
+                manufacturer_model_name=metadata_config.seg_manufacturer_model_name,
+                software_versions=metadata_config.software_versions,
+                device_serial_number=metadata_config.device_serial_number,
+                transfer_syntax_uid=transfer_syntax_uid,
+                dimension_organization_type="TILED_SPARSE",
+                plane_positions=[patch_pos],
+                pixel_measures=pixel_measures,
             )
 
-        segs.append(seg)
+            if not crop_total_pixel_matrix:
+                # Post-process to set the total pixel matrix of the segmentation to
+                # the same physical size as that of the source image. TODO
+                # incorporate this option into highdicom
+                seg.TotalPixelMatrixRows = int(
+                    np.round(source_image.TotalPixelMatrixRows / scale_y)
+                )
+                seg.TotalPixelMatrixColumns = int(
+                    np.round(source_image.TotalPixelMatrixColumns / scale_x)
+                )
 
-    return tuple(segs)
+            patch_segs.append(seg)
+
+        segs.append(tuple(patch_segs))
+
+    return segs
 
 
 def convert_annotation(
