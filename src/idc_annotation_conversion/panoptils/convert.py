@@ -225,10 +225,13 @@ def convert_annotation(
 
     ann_objects = []
 
-    for df, coord_offset in zip(dataframes, coords):
+    for roi_num, (df, coord_offset) in enumerate(zip(dataframes, coords)):
 
         ann_groups = []
         t, b, l, r = coord_offset
+
+        scale_x = (r - l) / 1024
+        scale_y = (b - t) / 1024
 
         for n, ((label, ann_type), sub_df) in enumerate(df.groupby(['group', 'type']), 1):
 
@@ -240,9 +243,10 @@ def convert_annotation(
                 x = np.array([int(s) for s in row['coords_x'].split(',')])
                 y = np.array([int(s) for s in row['coords_y'].split(',')])
 
-                # TODO apply scaling here too
-                x = l + x
-                y = t + y
+                # To find WSI coordinate, add the corner offset and apply the
+                # scaling factor
+                x = l + scale_x * x
+                y = t + scale_y * y
 
                 graphic_data = np.stack([x, y]).T
 
@@ -263,7 +267,7 @@ def convert_annotation(
                 hd.ann.AnnotationGroup(
                     number=n,
                     uid=hd.UID(),
-                    label=f"{label} ({ann_type})",
+                    label=f"ROI {roi_num + 1}: {label} ({ann_type})",
                     annotated_property_type=property_type,
                     annotated_property_category=property_category,
                     algorithm_type=hd.ann.AnnotationGroupGenerationTypeValues.MANUAL,

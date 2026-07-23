@@ -579,7 +579,7 @@ def run_csv_blob(
         annotation_coordinate_type=annotation_coordinate_type,
     )
 
-    if output_dir is not None:
+    if output_dir is not None and store_wsi_dicom:
         dcm_path = output_dir / f"{container_id}_im.dcm"
         wsi_im.save_as(dcm_path)
 
