@@ -1,3 +1,4 @@
+from pydicom.sr.codedict import codes
 import highdicom as hd
 from idc_annotation_conversion.git_utils import (
     get_git_remote_url,
@@ -356,4 +357,11 @@ ann_color_mapping = {
 ann_manufacturer = "Manufacturer"
 ann_manufacturer_model_name = "Model Name"
 ann_content_description = "Content"
-ann_series_description = "Annotations"
+ann_series_description_manual = "PanopTILs Expert Annotations"
+ann_series_description_boostrapped = "PanopTILs Model Predictions"
+ann_algorithm_identification = hd.AlgorithmIdentificationSequence(
+    name="Name",
+    family=codes.DCM.ArtificialIntelligence,
+    version="Version",
+    source="Source",
+)

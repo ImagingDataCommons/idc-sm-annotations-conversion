@@ -35,7 +35,8 @@ SOURCE_BUCKET = "idc-panoptils-manual"
 SOURCE_BUCKET_PROJECT = "idc-source-data"
 MANUAL_SEGMENTATIONS_PREFIX = "panoptils-manual/masks"
 MANUAL_ANNOTATIONS_PREFIX = "panoptils-manual/csv"
-BOOTSTRAPPED_PREFIX = "panoptils-bootstrapped"
+BOOTSTRAPPED_SEGMENTATIONS_PREFIX = "panoptils-bootstrapped/tcga/masks"
+BOOTSTRAPPED_ANNOTATIONS_PREFIX = "panoptils-bootstrapped/tcga/csv"
 
 
 @click.group()
@@ -286,6 +287,13 @@ def run_png_blob(
     help="Segmentation type for the Segmentation Image",
 )
 @click.option(
+    "--bootstrapped/--manual",
+    "-p/-P",
+    help="Run the process for the bootstrapped (versus manual) contours.",
+    default=False,
+    show_default=True,
+)
+@click.option(
     "--transfer-syntax-uid",
     "-x",
     type=click.Choice(
@@ -330,6 +338,7 @@ def convert_png(
     workers: int = 0,
     transfer_syntax_uid: str = ExplicitVRLittleEndian,
     crop_total_pixel_matrix: bool = False,
+    bootstrapped: bool = False,
 ):
     """Convert PNG files to DICOM segmentations.
 
@@ -382,7 +391,11 @@ def convert_png(
     logging.info("Listing cases")
     to_process = defaultdict(list)
 
-    for ann_blob in ann_bucket.list_blobs(prefix=MANUAL_SEGMENTATIONS_PREFIX):
+    prefix = (
+        BOOTSTRAPPED_SEGMENTATIONS_PREFIX if bootstrapped
+        else MANUAL_SEGMENTATIONS_PREFIX
+    )
+    for ann_blob in ann_bucket.list_blobs(prefix=prefix):
         if not ann_blob.name.endswith(".png"):
             continue
 
@@ -459,6 +472,7 @@ def run_csv_blob(
     store_wsi_dicom: bool = False,
     output_bucket: str | None = None,
     annotation_coordinate_type: str = "SCOORD",
+    bootstrapped: bool = False,
 ) -> str | None:
     """Convert a single h5 blob to an aggressiveness maps.
 
@@ -475,6 +489,9 @@ def run_csv_blob(
         Name of output bucket, if any, to store new parametric maps.
     annotation_coordinate_type: str
         Annotation coordinate type to use for the converted outputs.
+    bootstrapped: bool
+        Whether the CSV represent bootstrapped (True) or manual (False)
+        contours.
 
     Returns
     -------
@@ -561,22 +578,48 @@ def run_csv_blob(
         )
         for ann_blob in annotation_blobs
     ]
-    coords = [
-        (
-            int(b.split("top-")[1].split("_")[0]),
-            int(b.split("bottom-")[1].split("_")[0]),
-            int(b.split("left-")[1].split("_")[0]),
-            # Some files have unnecessary (1) at the end of the name
-            int(b.replace("(1)", "").replace(".csv", "").split("right-")[1].split("_")[0]),
-        )
-        for b in annotation_blobs
-    ]
+    if bootstrapped:
+        coords = []
+        patch_size = 1024
+
+        # e.g. TCGA-A1-A0SK-DX1_xmin45749_ymin25055_MPP-0.2500_xmin-0_ymin-0_xmax-1024_ymax-1024.csv
+        for blob in annotation_blobs:
+            outer_l = int(blob.split("_xmin")[1].split("_")[0])
+            outer_t = int(blob.split("_ymin")[1].split("_")[0])
+            inner_l = int(blob.split("xmin-")[1].split("_")[0])
+            inner_t = int(blob.split("ymin-")[1].split("_")[0])
+
+            wsi_spacing = (
+                wsi_ds.SharedFunctionalGroupsSequence[0]
+                .PixelMeasuresSequence[0].PixelSpacing[0]
+            )
+            ann_spacing = 0.0003
+            scale_factor = ann_spacing / wsi_spacing
+            l = outer_l + scale_factor * inner_l
+            r = outer_l + scale_factor * (inner_l + patch_size)
+            t = outer_t + scale_factor * inner_t
+            b = outer_t + scale_factor * (inner_t + patch_size)
+            print(blob, outer_l, outer_t, inner_l, inner_t)
+            print(t, b, l, r)
+            coords.append((t, b, l, r))
+    else:
+        coords = [
+            (
+                int(blob.split("top-")[1].split("_")[0]),
+                int(blob.split("bottom-")[1].split("_")[0]),
+                int(blob.split("left-")[1].split("_")[0]),
+                # Some files have unnecessary (1) at the end of the name
+                int(blob.replace("(1)", "").replace(".csv", "").split("right-")[1].split("_")[0]),
+            )
+            for blob in annotation_blobs
+        ]
 
     ann_dcm_list = convert_annotation(
         dataframes=dfs,
         coords=coords,
         source_image=wsi_im,
         annotation_coordinate_type=annotation_coordinate_type,
+        bootstrapped=bootstrapped,
     )
 
     if output_dir is not None and store_wsi_dicom:
@@ -646,6 +689,13 @@ def run_csv_blob(
     show_default=True,
 )
 @click.option(
+    "--bootstrapped/--manual",
+    "-p/-P",
+    help="Run the process for the bootstrapped (versus manual) contours.",
+    default=False,
+    show_default=True,
+)
+@click.option(
     "--store-wsi-dicom/--no-store-wsi-dicom",
     "-d/-D",
     default=False,
@@ -678,6 +728,7 @@ def convert_csv(
     store_wsi_dicom: bool,
     keep_existing: bool = False,
     workers: int = 0,
+    bootstrapped: bool = False,
 ):
     """Convert csv files to DICOM Bulk Microscopy Annotations.
 
@@ -730,7 +781,11 @@ def convert_csv(
     logging.info("Listing cases")
     to_process = defaultdict(list)
 
-    for ann_blob in ann_bucket.list_blobs(prefix=MANUAL_ANNOTATIONS_PREFIX):
+    prefix = (
+        BOOTSTRAPPED_ANNOTATIONS_PREFIX if bootstrapped
+        else MANUAL_ANNOTATIONS_PREFIX
+    )
+    for ann_blob in ann_bucket.list_blobs(prefix=prefix):
         if not ann_blob.name.endswith(".csv") or ann_blob.name.endswith("ALL_FOV_LOCATIONS.csv"):
             continue
 
@@ -765,6 +820,7 @@ def convert_csv(
                 output_dir=output_dir,
                 store_wsi_dicom=store_wsi_dicom,
                 output_bucket=output_bucket,
+                bootstrapped=bootstrapped,
             )
             for container_id, blobs in to_process.items()
         ]

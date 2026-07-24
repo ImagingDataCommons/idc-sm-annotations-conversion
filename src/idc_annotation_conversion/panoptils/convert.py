@@ -69,12 +69,11 @@ def convert_segmentation(
 
     """
     t, b, l, r = coords[0]
-    patch_size = b - t
 
     # Pixel-level scaling factor between source image pixels and segmentation
     # image pixels
-    scale_y = patch_size / arrays[0].shape[0]
-    scale_x = patch_size / arrays[0].shape[1]
+    scale_y = (b - t + 1) / arrays[0].shape[0]
+    scale_x = (r - l + 1) / arrays[0].shape[1]
 
     source_geom = cast(hd.VolumeGeometry, source_image.get_volume_geometry())
 
@@ -221,17 +220,28 @@ def convert_annotation(
     coords: list[tuple[int, int, int, int]],
     source_image: hd.Image,
     annotation_coordinate_type: str,
+    bootstrapped: bool,
 ) -> list[hd.ann.MicroscopyBulkSimpleAnnotations]:
 
     ann_objects = []
+
+    if bootstrapped:
+        algorithm_type = hd.ann.AnnotationGroupGenerationTypeValues.AUTOMATIC
+        series_description = metadata_config.ann_series_description_boostrapped
+        algorithm_identification = metadata_config.ann_algorithm_identification
+    else:
+        algorithm_type = hd.ann.AnnotationGroupGenerationTypeValues.MANUAL
+        series_description = metadata_config.ann_series_description_manual
+        algorithm_identification = None
 
     for roi_num, (df, coord_offset) in enumerate(zip(dataframes, coords)):
 
         ann_groups = []
         t, b, l, r = coord_offset
 
-        scale_x = (r - l) / 1024
-        scale_y = (b - t) / 1024
+        # Calculate scale factor assuming inclusive range
+        scale_x = (r - l + 1) / 1024
+        scale_y = (b - t + 1) / 1024
 
         for n, ((label, ann_type), sub_df) in enumerate(df.groupby(['group', 'type']), 1):
 
@@ -270,10 +280,11 @@ def convert_annotation(
                     label=f"ROI {roi_num + 1}: {label} ({ann_type})",
                     annotated_property_type=property_type,
                     annotated_property_category=property_category,
-                    algorithm_type=hd.ann.AnnotationGroupGenerationTypeValues.MANUAL,
+                    algorithm_type=algorithm_type,
                     graphic_type=graphic_type,
                     graphic_data=all_graphic_data,
                     display_color=metadata_config.ann_color_mapping[label],
+                    algorithm_identification=algorithm_identification,
                 )
             )
 
@@ -291,7 +302,7 @@ def convert_annotation(
                 software_versions=metadata_config.software_versions,
                 device_serial_number=metadata_config.device_serial_number,
                 content_description=metadata_config.ann_content_description,
-                series_description=metadata_config.ann_series_description,
+                series_description=series_description
             )
         )
 
