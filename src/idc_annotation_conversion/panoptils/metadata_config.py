@@ -8,6 +8,9 @@ from idc_annotation_conversion.git_utils import (
 region_series_description = "PanopTILs Manual Region Segmentations"
 nuclei_series_description = "PanopTILs Manual Nuclei Segmentations"
 border_series_description = "PanopTILs Manual Border Segmentations"
+region_bootstrapped_series_description = "PanopTILs Boostrapped Region Segmentations"
+nuclei_bootstrapped_series_description = "PanopTILs Boostrapped Nuclei Segmentations"
+border_bootstrapped_series_description = "PanopTILs Boostrapped Border Segmentations"
 
 region_finding_codes = {
     "Cancerous epithelium": (
@@ -238,6 +241,12 @@ border_finding_codes = {
 
 seg_manufacturer = "Manufacturer"
 seg_manufacturer_model_name = "Model Name"
+seg_algorithm_identification = hd.AlgorithmIdentificationSequence(
+    name="Name",
+    family=codes.DCM.ArtificialIntelligence,
+    version="Version",
+    source="Source",
+)
 software_versions = get_git_remote_url(simplify=True)
 device_serial_number = get_git_commit_hash()
 

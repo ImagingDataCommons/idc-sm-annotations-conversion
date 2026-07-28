@@ -54,6 +54,7 @@ def run_png_blob(
     include_lut: bool = False,
     transfer_syntax_uid: str = ExplicitVRLittleEndian,
     crop_total_pixel_matrix: bool = False,
+    bootstrapped: bool = False,
 ) -> str | None:
     """Convert a single png blob to a DICOM Segmentation.
 
@@ -77,6 +78,9 @@ def run_png_blob(
         image. Note this does not affect the frames that are stored, just how
         the total pixel matrix rows and columns are defined, and the positional
         information of the frames.
+    bootstrapped: bool
+        Whether this is a "bootstrapped" (model-generated), as opposed to a
+        manual, segmentation.
 
     Returns
     -------
@@ -160,15 +164,38 @@ def run_png_blob(
         cloud_io.read_image_from_blob(ann_bucket, ann_blob)
         for ann_blob in annotation_blobs
     ]
-    coords = [
-        (
-            int(b.split("top-")[1].split("_")[0]),
-            int(b.split("bottom-")[1].split("_")[0]),
-            int(b.split("left-")[1].split("_")[0]),
-            int(b.replace(".png", "").split("right-")[1].split("_")[0]),
-        )
-        for b in annotation_blobs
-    ]
+    if bootstrapped:
+        coords = []
+        patch_size = 1024
+
+        # e.g. TCGA-A1-A0SK-DX1_xmin45749_ymin25055_MPP-0.2500_xmin-0_ymin-0_xmax-1024_ymax-1024.csv
+        for blob in annotation_blobs:
+            outer_l = int(blob.split("_xmin")[1].split("_")[0])
+            outer_t = int(blob.split("_ymin")[1].split("_")[0])
+            inner_l = int(blob.split("xmin-")[1].split("_")[0])
+            inner_t = int(blob.split("ymin-")[1].split("_")[0])
+
+            wsi_spacing = (
+                wsi_ds.SharedFunctionalGroupsSequence[0]
+                .PixelMeasuresSequence[0].PixelSpacing[0]
+            )
+            seg_spacing = 0.0003
+            scale_factor = seg_spacing / wsi_spacing
+            l = outer_l + scale_factor * inner_l
+            r = outer_l + scale_factor * (inner_l + patch_size)
+            t = outer_t + scale_factor * inner_t
+            b = outer_t + scale_factor * (inner_t + patch_size)
+            coords.append((t, b, l, r))
+    else:
+        coords = [
+            (
+                int(b.split("top-")[1].split("_")[0]),
+                int(b.split("bottom-")[1].split("_")[0]),
+                int(b.split("left-")[1].split("_")[0]),
+                int(b.replace(".png", "").split("right-")[1].split("_")[0]),
+            )
+            for b in annotation_blobs
+        ]
 
     all_segs = convert_segmentation(
         arrays=arrays,
@@ -179,6 +206,7 @@ def run_png_blob(
         container_id=selection_df.ContainerIdentifier.iloc[0],
         transfer_syntax_uid=transfer_syntax_uid,
         crop_total_pixel_matrix=crop_total_pixel_matrix,
+        bootstrapped=bootstrapped,
     )
 
     if store_wsi_dicom and output_dir is not None:
@@ -433,6 +461,7 @@ def convert_png(
                 output_bucket=output_bucket,
                 transfer_syntax_uid=transfer_syntax_uid,
                 crop_total_pixel_matrix=crop_total_pixel_matrix,
+                bootstrapped=bootstrapped,
             )
             for container_id, blobs in to_process.items()
         ]
@@ -451,6 +480,7 @@ def convert_png(
                     output_bucket=output_bucket,
                     crop_total_pixel_matrix=crop_total_pixel_matrix,
                     transfer_syntax_uid=transfer_syntax_uid,
+                    bootstrapped=bootstrapped,
                 )
                 futures.append(fut)
 
@@ -599,8 +629,6 @@ def run_csv_blob(
             r = outer_l + scale_factor * (inner_l + patch_size)
             t = outer_t + scale_factor * inner_t
             b = outer_t + scale_factor * (inner_t + patch_size)
-            print(blob, outer_l, outer_t, inner_l, inner_t)
-            print(t, b, l, r)
             coords.append((t, b, l, r))
     else:
         coords = [

@@ -24,6 +24,7 @@ def convert_segmentation(
     container_id: str,
     transfer_syntax_uid: str = ExplicitVRLittleEndian,
     crop_total_pixel_matrix: bool = False,
+    bootstrapped: bool = False,
 ) -> list[tuple[hd.seg.Segmentation, hd.seg.Segmentation, hd.seg.Segmentation]]:
     """Convert input array to DICOM Segmentations.
 
@@ -59,6 +60,9 @@ def convert_segmentation(
         image. Note this does not affect the frames that are stored, just how
         the total pixel matrix rows and columns are defined, and the positional
         information of the frames.
+    bootstrapped: bool
+        Whether this is a "bootstrapped" (model-generated), as opposed to a
+        manual, segmentation.
 
     Returns
     -------
@@ -68,6 +72,23 @@ def convert_segmentation(
         Segmentations for (tissues, nuclei, boundaries).
 
     """
+    if bootstrapped:
+        algorithm_type = hd.seg.SegmentAlgorithmTypeValues.AUTOMATIC
+        region_desc = metadata_config.region_bootstrapped_series_description
+        nuclei_desc = metadata_config.nuclei_bootstrapped_series_description
+        border_desc = metadata_config.border_bootstrapped_series_description
+        algorithm_identification = metadata_config.seg_algorithm_identification
+        segment_label_suffix = " (Bootstrapped)"
+        type_str = "bootstrapped"
+    else:
+        algorithm_type = hd.seg.SegmentAlgorithmTypeValues.MANUAL
+        region_desc = metadata_config.region_series_description
+        nuclei_desc = metadata_config.nuclei_series_description
+        border_desc = metadata_config.border_series_description
+        algorithm_identification = None
+        segment_label_suffix = " (Manual)"
+        type_str = "manual"
+
     t, b, l, r = coords[0]
 
     # Pixel-level scaling factor between source image pixels and segmentation
@@ -141,16 +162,16 @@ def convert_segmentation(
         ) for pix, ref in zip(pixel_matrix_positions, ref_coords)
     ]
 
-    for patch_array, patch_pos in zip(arrays, plane_positions):
+    for patch_num, (patch_array, patch_pos) in enumerate(zip(arrays, plane_positions)):
         patch_segs = []
 
         # Loop over the three channels. Each creates its own Segmentation instance
         for c, desc, finding_codes in zip(
             range(3),
             [
-                metadata_config.region_series_description,
-                metadata_config.nuclei_series_description,
-                metadata_config.border_series_description,
+                region_desc,
+                nuclei_desc,
+                border_desc,
             ],
             [
                 metadata_config.region_finding_codes,
@@ -163,12 +184,13 @@ def convert_segmentation(
             segment_descriptions = [
                 hd.seg.SegmentDescription(
                     segment_number=number,
-                    segment_label=label,
+                    segment_label=label + segment_label_suffix,
                     segmented_property_category=cat_code,
                     segmented_property_type=prop_code,
-                    algorithm_type=hd.seg.SegmentAlgorithmTypeValues.MANUAL,
-                    tracking_id=f"{container_id}-{label}",
+                    algorithm_type=algorithm_type,
+                    tracking_id=f"{container_id}-{type_str}-ROI{patch_num}-{label}",
                     tracking_uid=hd.UID(),
+                    algorithm_identification=algorithm_identification,
                 ) for (number, (label, (prop_code, cat_code))) in enumerate(
                     finding_codes.items(),
                     start=1
