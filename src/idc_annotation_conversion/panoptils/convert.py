@@ -80,6 +80,7 @@ def convert_segmentation(
         algorithm_identification = metadata_config.seg_algorithm_identification
         segment_label_suffix = " (Bootstrapped)"
         type_str = "bootstrapped"
+        series_num_start = 200
     else:
         algorithm_type = hd.seg.SegmentAlgorithmTypeValues.MANUAL
         region_desc = metadata_config.region_series_description
@@ -88,6 +89,7 @@ def convert_segmentation(
         algorithm_identification = None
         segment_label_suffix = " (Manual)"
         type_str = "manual"
+        series_num_start = 100
 
     t, b, l, r = coords[0]
 
@@ -204,7 +206,7 @@ def convert_segmentation(
                 pixel_array=channel_array,
                 segment_descriptions=segment_descriptions,
                 series_instance_uid=hd.UID(),
-                series_number=20 + c,
+                series_number=series_num_start + c,
                 sop_instance_uid=hd.UID(),
                 series_description=desc,
                 instance_number=1,
@@ -251,10 +253,12 @@ def convert_annotation(
         algorithm_type = hd.ann.AnnotationGroupGenerationTypeValues.AUTOMATIC
         series_description = metadata_config.ann_series_description_boostrapped
         algorithm_identification = metadata_config.ann_algorithm_identification
+        series_num_start = 400
     else:
         algorithm_type = hd.ann.AnnotationGroupGenerationTypeValues.MANUAL
         series_description = metadata_config.ann_series_description_manual
         algorithm_identification = None
+        series_num_start = 300
 
     for roi_num, (df, coord_offset) in enumerate(zip(dataframes, coords)):
 
@@ -316,7 +320,7 @@ def convert_annotation(
                 annotation_coordinate_type=annotation_coordinate_type,
                 annotation_groups=ann_groups,
                 series_instance_uid=hd.UID(),
-                series_number=30,
+                series_number=series_num_start + roi_num,
                 sop_instance_uid=hd.UID(),
                 instance_number=1,
                 manufacturer=metadata_config.ann_manufacturer,
