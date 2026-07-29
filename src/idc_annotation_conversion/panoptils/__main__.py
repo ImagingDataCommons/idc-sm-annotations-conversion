@@ -39,6 +39,57 @@ BOOTSTRAPPED_SEGMENTATIONS_PREFIX = "panoptils-bootstrapped/tcga/masks"
 BOOTSTRAPPED_ANNOTATIONS_PREFIX = "panoptils-bootstrapped/tcga/csv"
 
 
+def _get_coordinates_from_blob_names(
+    annotation_blobs: list[str],
+    bootstrapped: bool,
+) -> tuple[list[tuple[int, int]], list[tuple[int, int]] | None]:
+    """Parse the blob filenames to extract important coordinates.
+
+    Parameters
+    ----------
+    annotation_blobs: list[str]
+        List of blob filenames to parse.
+    bootstrapped: bool
+        Whether the annotations are bootstrapped (True), or manual (False).
+
+    Returns
+    -------
+    list[tuple[int, int]]
+        Tuple of patch coordinates (t, l) for each blob. These are in pixel
+        units of the source image before resampling.
+    list[tuple[int, int]] | None
+        If bootstrapped, list of inner offset coordinates. These are offset
+        coordinates within in pixel units of the resampled array within the
+        cropped region. None if manual annotations.
+
+    """
+    if bootstrapped:
+        coords = []
+        inner_offset_coords = []
+
+        for blob in annotation_blobs:
+            # e.g. TCGA-A1-A0SK-DX1_xmin45749_ymin25055_MPP-0.2500_xmin-0_ymin-0_xmax-1024_ymax-1024.csv
+            outer_l = int(blob.split("_xmin")[1].split("_")[0])
+            outer_t = int(blob.split("_ymin")[1].split("_")[0])
+            inner_l = int(blob.split("xmin-")[1].split("_")[0])
+            inner_t = int(blob.split("ymin-")[1].split("_")[0])
+
+            coords.append((outer_t, outer_l))
+            inner_offset_coords.append((inner_t, inner_l))
+    else:
+        coords = [
+            (
+                int(blob.split("top-")[1].split("_")[0]),
+                int(blob.split("left-")[1].split("_")[0]),
+            )
+            for blob in annotation_blobs
+        ]
+        inner_offset_coords = None
+
+    return coords, inner_offset_coords
+
+
+
 @click.group()
 def cli():
     pass
@@ -164,38 +215,10 @@ def run_png_blob(
         cloud_io.read_image_from_blob(ann_bucket, ann_blob)
         for ann_blob in annotation_blobs
     ]
-    if bootstrapped:
-        coords = []
-        patch_size = 1024
-
-        # e.g. TCGA-A1-A0SK-DX1_xmin45749_ymin25055_MPP-0.2500_xmin-0_ymin-0_xmax-1024_ymax-1024.csv
-        for blob in annotation_blobs:
-            outer_l = int(blob.split("_xmin")[1].split("_")[0])
-            outer_t = int(blob.split("_ymin")[1].split("_")[0])
-            inner_l = int(blob.split("xmin-")[1].split("_")[0])
-            inner_t = int(blob.split("ymin-")[1].split("_")[0])
-
-            wsi_spacing = (
-                wsi_ds.SharedFunctionalGroupsSequence[0]
-                .PixelMeasuresSequence[0].PixelSpacing[0]
-            )
-            seg_spacing = 0.0003
-            scale_factor = seg_spacing / wsi_spacing
-            l = outer_l + scale_factor * inner_l
-            r = outer_l + scale_factor * (inner_l + patch_size)
-            t = outer_t + scale_factor * inner_t
-            b = outer_t + scale_factor * (inner_t + patch_size)
-            coords.append((t, b, l, r))
-    else:
-        coords = [
-            (
-                int(b.split("top-")[1].split("_")[0]),
-                int(b.split("bottom-")[1].split("_")[0]),
-                int(b.split("left-")[1].split("_")[0]),
-                int(b.replace(".png", "").split("right-")[1].split("_")[0]),
-            )
-            for b in annotation_blobs
-        ]
+    coords, inner_offset_coords = _get_coordinates_from_blob_names(
+        annotation_blobs,
+        bootstrapped,
+    )
 
     all_segs = convert_segmentation(
         arrays=arrays,
@@ -207,6 +230,7 @@ def run_png_blob(
         transfer_syntax_uid=transfer_syntax_uid,
         crop_total_pixel_matrix=crop_total_pixel_matrix,
         bootstrapped=bootstrapped,
+        inner_offset_coords=inner_offset_coords,
     )
 
     if store_wsi_dicom and output_dir is not None:
@@ -501,7 +525,6 @@ def run_csv_blob(
     output_dir: Path | None = None,
     store_wsi_dicom: bool = False,
     output_bucket: str | None = None,
-    annotation_coordinate_type: str = "SCOORD",
     bootstrapped: bool = False,
 ) -> str | None:
     """Convert a single h5 blob to an aggressiveness maps.
@@ -517,8 +540,6 @@ def run_csv_blob(
         Whether to store the original source image after pulling it.
     output_bucket: str | None, optional
         Name of output bucket, if any, to store new parametric maps.
-    annotation_coordinate_type: str
-        Annotation coordinate type to use for the converted outputs.
     bootstrapped: bool
         Whether the CSV represent bootstrapped (True) or manual (False)
         contours.
@@ -608,46 +629,17 @@ def run_csv_blob(
         )
         for ann_blob in annotation_blobs
     ]
-    if bootstrapped:
-        coords = []
-        patch_size = 1024
 
-        # e.g. TCGA-A1-A0SK-DX1_xmin45749_ymin25055_MPP-0.2500_xmin-0_ymin-0_xmax-1024_ymax-1024.csv
-        for blob in annotation_blobs:
-            outer_l = int(blob.split("_xmin")[1].split("_")[0])
-            outer_t = int(blob.split("_ymin")[1].split("_")[0])
-            inner_l = int(blob.split("xmin-")[1].split("_")[0])
-            inner_t = int(blob.split("ymin-")[1].split("_")[0])
-
-            wsi_spacing = (
-                wsi_ds.SharedFunctionalGroupsSequence[0]
-                .PixelMeasuresSequence[0].PixelSpacing[0]
-            )
-            ann_spacing = 0.0003
-            scale_factor = ann_spacing / wsi_spacing
-            l = outer_l + scale_factor * inner_l
-            r = outer_l + scale_factor * (inner_l + patch_size)
-            t = outer_t + scale_factor * inner_t
-            b = outer_t + scale_factor * (inner_t + patch_size)
-            coords.append((t, b, l, r))
-    else:
-        coords = [
-            (
-                int(blob.split("top-")[1].split("_")[0]),
-                int(blob.split("bottom-")[1].split("_")[0]),
-                int(blob.split("left-")[1].split("_")[0]),
-                # Some files have unnecessary (1) at the end of the name
-                int(blob.replace("(1)", "").replace(".csv", "").split("right-")[1].split("_")[0]),
-            )
-            for blob in annotation_blobs
-        ]
-
+    coords, inner_offset_coords = _get_coordinates_from_blob_names(
+        annotation_blobs,
+        bootstrapped,
+    )
     ann_dcm_list = convert_annotation(
         dataframes=dfs,
         coords=coords,
         source_image=wsi_im,
-        annotation_coordinate_type=annotation_coordinate_type,
         bootstrapped=bootstrapped,
+        inner_offset_coords=inner_offset_coords,
     )
 
     if output_dir is not None and store_wsi_dicom:
@@ -733,25 +725,10 @@ def run_csv_blob(
         "(if any)."
     ),
 )
-@click.option(
-    "--annotation-coordinate-type",
-    "-a",
-    type=click.Choice(
-        [v.value for v in hd.ann.AnnotationCoordinateTypeValues],
-        case_sensitive=False,
-    ),
-    default="2D",
-    show_default=True,
-    help=(
-        "Coordinate type for points stored in the microscopy annotations. "
-        "'2D', or '3D'."
-    ),
-)
 def convert_csv(
     number: Optional[int],
     output_dir: Optional[Path],
     output_bucket: str | None,
-    annotation_coordinate_type: str,
     store_bucket: bool,
     store_wsi_dicom: bool,
     keep_existing: bool = False,
@@ -844,7 +821,6 @@ def convert_csv(
             run_csv_blob(
                 container_id=container_id,
                 annotation_blobs=blobs,
-                annotation_coordinate_type=annotation_coordinate_type,
                 output_dir=output_dir,
                 store_wsi_dicom=store_wsi_dicom,
                 output_bucket=output_bucket,
@@ -860,7 +836,6 @@ def convert_csv(
                     run_csv_blob,
                     container_id=container_id,
                     annotation_blobs=blobs,
-                    annotation_coordinate_type=annotation_coordinate_type,
                     output_dir=output_dir,
                     store_wsi_dicom=store_wsi_dicom,
                     output_bucket=output_bucket,

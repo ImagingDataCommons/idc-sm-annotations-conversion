@@ -15,9 +15,17 @@ GRAPHIC_TYPE_MAPPING = {
 }
 
 
+# The pixel spacing of the resampled images that the annotations and
+# segmentations have been performed on. The documentation claims that this is 
+# 0.25 microns per pixel, but my calculations revealed that it is actually 0.3
+# microns per pixel. This was discussed with the original data providers, who
+# agree with my calculations
+RESAMPLED_SPACING = 0.0003
+
+
 def convert_segmentation(
     arrays: list[np.ndarray],
-    coords: list[tuple[int, int, int, int]],
+    coords: list[tuple[int, int]],
     source_image: hd.Image,
     segmentation_type: str,
     include_lut: bool,
@@ -25,6 +33,7 @@ def convert_segmentation(
     transfer_syntax_uid: str = ExplicitVRLittleEndian,
     crop_total_pixel_matrix: bool = False,
     bootstrapped: bool = False,
+    inner_offset_coords: list[tuple[int, int]] | None = None,
 ) -> list[tuple[hd.seg.Segmentation, hd.seg.Segmentation, hd.seg.Segmentation]]:
     """Convert input array to DICOM Segmentations.
 
@@ -36,11 +45,11 @@ def convert_segmentation(
         patch drawn from the slide. Each of the three channels encodes a
         different "set" of segmentations. First channel is regions, second is
         nuclei, third is boundaries.
-    coords: list[tuple[int, int, int, int]]
-        List of coordinates associated with each array. Item i of the list
-        gives the coordinates of the patch for item i of the ``arrays`` list.
-        Each item is a tuple containing the (top, bottom, left, right)
-        coordinates for the patch.
+    coords: list[tuple[int, int]]
+        List of coordinates associated with each array. Coordinates are in
+        pixel units of the source image, and give the (top, left) coordinates
+        of the patch that was extracted before it was rescaled and then
+        annotated.
     source_image: highdicom.Image
         Dataset (potentially without pixel data) of the whole slide image from
         which the segmentation arrays were derived.
@@ -63,6 +72,10 @@ def convert_segmentation(
     bootstrapped: bool
         Whether this is a "bootstrapped" (model-generated), as opposed to a
         manual, segmentation.
+    inner_offset_coords: list[tuple[int, int]] | None
+        Offset coordinates of the segmentation mask within the larger patch.
+        These coordinates are given in pixel units of the resampled patch.
+        Format is (top, left). If None, no offset coordinates are used.
 
     Returns
     -------
@@ -91,18 +104,13 @@ def convert_segmentation(
         type_str = "manual"
         series_num_start = 100
 
-    t, b, l, r = coords[0]
-
-    # Pixel-level scaling factor between source image pixels and segmentation
-    # image pixels
-    scale_y = (b - t + 1) / arrays[0].shape[0]
-    scale_x = (r - l + 1) / arrays[0].shape[1]
+    top, left = coords[0]
 
     source_geom = cast(hd.VolumeGeometry, source_image.get_volume_geometry())
 
     if crop_total_pixel_matrix:
-        min_top = min(t for t, _, _, _ in coords)
-        min_left = min(l for _, _, l, _ in coords)
+        min_top = min(top for (top, _) in coords)
+        min_left = min(left for (_, left) in coords)
         seg_position = source_geom.map_indices_to_reference(
             np.array([[0, min_top, min_left]])
         )[0].tolist()
@@ -112,15 +120,10 @@ def convert_segmentation(
     source_spacing = source_geom.pixel_spacing
     slice_spacing = source_geom.spacing_between_slices
 
-    # The segmentation arrays are resampled at a different pixel spacing from
-    # the source image. Find the spacing of pixels in the segmentation array
-    # from the scaling factor between the two array sizes
-    seg_spacing = [source_spacing[0] * scale_y, source_spacing[1] * scale_x]
-
     seg_geom = hd.VolumeGeometry.from_attributes(
         image_position=seg_position,
         image_orientation=source_geom.direction_cosines,
-        pixel_spacing=seg_spacing,
+        pixel_spacing=[RESAMPLED_SPACING, RESAMPLED_SPACING],
         rows=100,  # not used
         columns=100,  # not used
         number_of_frames=1,
@@ -138,23 +141,31 @@ def convert_segmentation(
         slice_spacing = 0.0
 
     pixel_measures = hd.PixelMeasuresSequence(
-        pixel_spacing=seg_spacing,
+        pixel_spacing=[RESAMPLED_SPACING, RESAMPLED_SPACING],
         spacing_between_slices=slice_spacing,
         slice_thickness=0.0,
     )
 
     segs = []
 
-    source_pix_indices_3d = np.array(
-        [[0, t, l] for (t, _, l, _) in coords]
+    outer_patch_source_pix_indices = np.array(
+        [[0, top, left] for (top, left) in coords]
     )
 
-    seg_pix_indices = source_ind_to_seg_ind_transformer(source_pix_indices_3d)
-    seg_pix_indices = np.round(seg_pix_indices).astype(np.uint32)
+    outer_patch_seg_pix_indices = source_ind_to_seg_ind_transformer(outer_patch_source_pix_indices)
+    outer_patch_seg_pix_indices = np.round(outer_patch_seg_pix_indices).astype(np.uint32)
+
+    if inner_offset_coords is not None:
+        inner_offsets_array = np.array(
+            [[0, top, left] for (top, left) in inner_offset_coords]
+        )
+        inner_patch_seg_pix_indices = outer_patch_seg_pix_indices + inner_offsets_array
+    else:
+        inner_patch_seg_pix_indices = outer_patch_seg_pix_indices
 
     # PlanePositionSequence requires different order convention
-    ref_coords = seg_geom.map_indices_to_reference(seg_pix_indices)
-    pixel_matrix_positions = np.fliplr(seg_pix_indices[:, 1:]) + 1
+    ref_coords = seg_geom.map_indices_to_reference(inner_patch_seg_pix_indices)
+    pixel_matrix_positions = np.fliplr(inner_patch_seg_pix_indices[:, 1:]) + 1
 
     plane_positions = [
         hd.PlanePositionSequence(
@@ -163,6 +174,9 @@ def convert_segmentation(
             image_position=ref,
         ) for pix, ref in zip(pixel_matrix_positions, ref_coords)
     ]
+
+    scale_y = source_spacing[0] / RESAMPLED_SPACING
+    scale_x = source_spacing[1] / RESAMPLED_SPACING
 
     for patch_num, (patch_array, patch_pos) in enumerate(zip(arrays, plane_positions)):
         patch_segs = []
@@ -226,10 +240,10 @@ def convert_segmentation(
                 # the same physical size as that of the source image. TODO
                 # incorporate this option into highdicom
                 seg.TotalPixelMatrixRows = int(
-                    np.round(source_image.TotalPixelMatrixRows / scale_y)
+                    np.round(source_image.TotalPixelMatrixRows * scale_y)
                 )
                 seg.TotalPixelMatrixColumns = int(
-                    np.round(source_image.TotalPixelMatrixColumns / scale_x)
+                    np.round(source_image.TotalPixelMatrixColumns * scale_x)
                 )
 
             patch_segs.append(seg)
@@ -241,11 +255,39 @@ def convert_segmentation(
 
 def convert_annotation(
     dataframes: list[pd.DataFrame],
-    coords: list[tuple[int, int, int, int]],
+    coords: list[tuple[int, int]],
     source_image: hd.Image,
-    annotation_coordinate_type: str,
     bootstrapped: bool,
+    inner_offset_coords: list[tuple[int, int]] | None = None,
 ) -> list[hd.ann.MicroscopyBulkSimpleAnnotations]:
+    """Convert vector annotations from a dataframe to DICOM MBSA.
+
+    Parameters
+    ----------
+    dataframes: list[pandas.DataFrame]
+        List of dataframes (read from the original CSVs) containing annotation
+        coordinates. Multiple dataframes may be passed, all relating to the
+        same source image.
+    coords: list[tuple[int, int]
+        For each dataframe, a tuple of coordinates giving the coodinates of the
+        patch the annotations apply to. Coordinates are in pixel units of the
+        source image, and give the (top, left) coordinates of
+        the patch that was extracted before it was rescaled and then annotated.
+    source_image: highdicom.Image
+        Source image that the annotations apply to (pixel data not required).
+    bootstrapped: bool
+        Whether thses annotations are bootstrapped (created by a model trained
+        on manual annotations), or the original manual (False) annotations.
+    inner_offset_coords: list[tuple[int, int]] | None
+        Offset coordinates of the annotations within the larger patch.
+        These coordinates are given in pixel units of the resampled patch.
+        Format is (top, left). If None, no offset coordinates are used.
+        
+    """
+    source_geom = cast(hd.VolumeGeometry, source_image.get_volume_geometry())
+    source_spacing = source_geom.pixel_spacing
+    scale_y = source_spacing[0] / RESAMPLED_SPACING
+    scale_x = source_spacing[1] / RESAMPLED_SPACING
 
     ann_objects = []
 
@@ -260,14 +302,15 @@ def convert_annotation(
         algorithm_identification = None
         series_num_start = 300
 
-    for roi_num, (df, coord_offset) in enumerate(zip(dataframes, coords)):
+    if inner_offset_coords is None:
+        inner_offset_coords = [(0, 0)] * len(dataframes)
 
+    for roi_num, (df, patch_offset, inner_offset) in enumerate(
+        zip(dataframes, coords, inner_offset_coords)
+    ):
         ann_groups = []
-        t, b, l, r = coord_offset
-
-        # Calculate scale factor assuming inclusive range
-        scale_x = (r - l + 1) / 1024
-        scale_y = (b - t + 1) / 1024
+        top, left = patch_offset
+        inner_top, inner_left = inner_offset
 
         for n, ((label, ann_type), sub_df) in enumerate(df.groupby(['group', 'type']), 1):
 
@@ -281,8 +324,8 @@ def convert_annotation(
 
                 # To find WSI coordinate, add the corner offset and apply the
                 # scaling factor
-                x = l + scale_x * x
-                y = t + scale_y * y
+                y = top + (y + inner_top) / scale_y
+                x = left + (x + inner_left) / scale_x
 
                 graphic_data = np.stack([x, y]).T
 
@@ -317,7 +360,7 @@ def convert_annotation(
         ann_objects.append(
             hd.ann.MicroscopyBulkSimpleAnnotations(
                 source_images=[source_image],
-                annotation_coordinate_type=annotation_coordinate_type,
+                annotation_coordinate_type=hd.ann.AnnotationCoordinateTypeValues.SCOORD,
                 annotation_groups=ann_groups,
                 series_instance_uid=hd.UID(),
                 series_number=series_num_start + roi_num,
