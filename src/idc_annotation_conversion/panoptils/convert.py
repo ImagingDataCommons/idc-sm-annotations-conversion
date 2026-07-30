@@ -90,7 +90,7 @@ def convert_segmentation(
         region_desc = metadata_config.region_bootstrapped_series_description
         nuclei_desc = metadata_config.nuclei_bootstrapped_series_description
         border_desc = metadata_config.border_bootstrapped_series_description
-        algorithm_identification = metadata_config.seg_algorithm_identification
+        algorithm_identification = metadata_config.algorithm_identification
         segment_label_suffix = " (Bootstrapped)"
         type_str = "bootstrapped"
         series_num_start = 200
@@ -225,8 +225,8 @@ def convert_segmentation(
                 series_description=desc,
                 instance_number=1,
                 segmentation_type=segmentation_type,
-                manufacturer=metadata_config.seg_manufacturer,
-                manufacturer_model_name=metadata_config.seg_manufacturer_model_name,
+                manufacturer=metadata_config.manufacturer,
+                manufacturer_model_name=metadata_config.manufacturer_model_name,
                 software_versions=metadata_config.software_versions,
                 device_serial_number=metadata_config.device_serial_number,
                 transfer_syntax_uid=transfer_syntax_uid,
@@ -294,7 +294,7 @@ def convert_annotation(
     if bootstrapped:
         algorithm_type = hd.ann.AnnotationGroupGenerationTypeValues.AUTOMATIC
         series_description = metadata_config.ann_series_description_boostrapped
-        algorithm_identification = metadata_config.ann_algorithm_identification
+        algorithm_identification = metadata_config.algorithm_identification
         series_num_start = 400
     else:
         algorithm_type = hd.ann.AnnotationGroupGenerationTypeValues.MANUAL
@@ -366,8 +366,8 @@ def convert_annotation(
                 series_number=series_num_start + roi_num,
                 sop_instance_uid=hd.UID(),
                 instance_number=1,
-                manufacturer=metadata_config.ann_manufacturer,
-                manufacturer_model_name=metadata_config.ann_manufacturer_model_name,
+                manufacturer=metadata_config.manufacturer,
+                manufacturer_model_name=metadata_config.manufacturer_model_name,
                 software_versions=metadata_config.software_versions,
                 device_serial_number=metadata_config.device_serial_number,
                 content_description=metadata_config.ann_content_description,
