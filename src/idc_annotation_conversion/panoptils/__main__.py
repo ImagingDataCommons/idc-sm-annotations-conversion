@@ -233,13 +233,15 @@ def run_png_blob(
         inner_offset_coords=inner_offset_coords,
     )
 
+    type_str = '_bootstrapped' if bootstrapped else '_manual'
+
     if store_wsi_dicom and output_dir is not None:
         dcm_path = output_dir / f"{container_id}_im.dcm"
         wsi_im.save_as(dcm_path)
 
     for (region_seg, nuclei_seg, border_seg), blob in zip(all_segs, annotation_blobs):
         # Store objects to filesystem
-        output_stem = blob.replace('.png', '').split('/')[-1]
+        output_stem = blob.replace('.png', type_str).split('/')[-1]
 
         if output_dir is not None:
 
@@ -642,6 +644,8 @@ def run_csv_blob(
         inner_offset_coords=inner_offset_coords,
     )
 
+    type_str = 'bootstrapped' if bootstrapped else 'manual'
+
     if output_dir is not None and store_wsi_dicom:
         dcm_path = output_dir / f"{container_id}_im.dcm"
         wsi_im.save_as(dcm_path)
@@ -651,7 +655,7 @@ def run_csv_blob(
 
         logging.info(f"Writing annotations to {str(output_dir)}.")
         for i, ann_dcm in enumerate(ann_dcm_list):
-            out_path = output_dir / f"{container_id}_ann_{i}.dcm"
+            out_path = output_dir / f"{container_id}_{type_str}_ann_{i}.dcm"
             ann_dcm.save_as(out_path)
 
     # Store to bucket
@@ -662,7 +666,7 @@ def run_csv_blob(
             cloud_io.write_dataset_to_blob(
                 ann_dcm,
                 output_bucket_obj,
-                f"{container_id}_ann_{i}.dcm",
+                f"{container_id}_{type_str}_ann_{i}.dcm",
             )
 
     return error
