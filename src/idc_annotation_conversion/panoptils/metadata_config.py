@@ -22,14 +22,14 @@ device_serial_number = get_git_commit_hash()
 region_series_description = "PanopTILs Manual Region Segmentations"
 nuclei_series_description = "PanopTILs Manual Nuclei Segmentations"
 border_series_description = "PanopTILs Manual Border Segmentations"
-region_bootstrapped_series_description = "PanopTILs Boostrapped Region Segmentations"
-nuclei_bootstrapped_series_description = "PanopTILs Boostrapped Nuclei Segmentations"
-border_bootstrapped_series_description = "PanopTILs Boostrapped Border Segmentations"
+region_bootstrapped_series_description = "PanopTILs Bootstrapped Region Segmentations"
+nuclei_bootstrapped_series_description = "PanopTILs Bootstrapped Nuclei Segmentations"
+border_bootstrapped_series_description = "PanopTILs Bootstrapped Border Segmentations"
 
 # Annotation-specific metadata
 ann_content_description = "Cell type annotations"
 ann_series_description_manual = "PanopTILs Manual Cell Type Annotations"
-ann_series_description_boostrapped = "PanopTILs Boostrapped Cell Type Annotations"
+ann_series_description_boostrapped = "PanopTILs Bootstrapped Cell Type Annotations"
 
 # From fig 3 in the paper
 ann_color_mapping = {
