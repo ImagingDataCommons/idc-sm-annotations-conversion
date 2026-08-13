@@ -182,7 +182,7 @@ def convert_segmentation(
         patch_segs = []
 
         # Loop over the three channels. Each creates its own Segmentation instance
-        for c, desc, finding_codes in zip(
+        for c, desc, findings_list in zip(
             range(3),
             [
                 region_desc,
@@ -190,25 +190,27 @@ def convert_segmentation(
                 border_desc,
             ],
             [
-                metadata_config.region_finding_codes,
-                metadata_config.nuclei_finding_codes,
-                metadata_config.border_finding_codes,
+                metadata_config.png_region_findings_list,
+                metadata_config.png_nuclei_findings_list,
+                metadata_config.png_border_findings_list,
             ],
         ):
             # Loop over all the segments within this input channel to create
             # segment descriptions
             segment_descriptions = [
                 hd.seg.SegmentDescription(
-                    segment_number=number,
+                    segment_number=num,
                     segment_label=label + segment_label_suffix,
                     segmented_property_category=cat_code,
                     segmented_property_type=prop_code,
                     algorithm_type=algorithm_type,
-                    tracking_id=f"{container_id}-{type_str}-ROI{patch_num}-{label}",
+                    tracking_id=f"{container_id}-{type_str}-ROI{patch_num}-{label.replace(' ', '-')}",
                     tracking_uid=hd.UID(),
                     algorithm_identification=algorithm_identification,
-                ) for (number, (label, (prop_code, cat_code))) in enumerate(
-                    finding_codes.items(),
+                    display_color=hd.color.CIELabColor.from_rgb(*rgb),
+                    anatomic_regions=[anat_code] if anat_code is not None else None,
+                ) for (num, (label, prop_code, cat_code, anat_code, rgb)) in enumerate(
+                    findings_list,
                     start=1
                 )
             ]
@@ -340,19 +342,26 @@ def convert_annotation(
 
                 all_graphic_data.append(graphic_data)
 
-            property_category, property_type = metadata_config.csv_finding_codes[label]
+            (
+                stored_label,
+                type_code,
+                cat_code,
+                anat_code,
+                rgb,
+            )= metadata_config.csv_finding_mapping[label]
 
             ann_groups.append(
                 hd.ann.AnnotationGroup(
                     number=n,
                     uid=hd.UID(),
-                    label=f"ROI {roi_num + 1}: {label} ({ann_type})",
-                    annotated_property_type=property_type,
-                    annotated_property_category=property_category,
+                    label=f"ROI {roi_num + 1}: {stored_label} ({ann_type})",
+                    annotated_property_type=type_code,
+                    annotated_property_category=cat_code,
+                    anatomic_regions=[anat_code] if anat_code is not None else None,
                     algorithm_type=algorithm_type,
                     graphic_type=graphic_type,
                     graphic_data=all_graphic_data,
-                    display_color=metadata_config.ann_color_mapping[label],
+                    display_color=hd.color.CIELabColor.from_rgb(*rgb),
                     algorithm_identification=algorithm_identification,
                 )
             )
