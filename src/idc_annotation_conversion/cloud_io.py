@@ -1,4 +1,5 @@
 """Utilities for reading and writing objects to/from Google Cloud."""
+import hashlib
 from io import BytesIO
 
 from google.cloud import storage
@@ -49,8 +50,8 @@ def write_dataset_to_blob(
     dataset: pydicom.Dataset,
     bucket: storage.Bucket,
     blob_name: str
-) -> None:
-    """Write a pydicom Dataset to a bucket.
+) -> str:
+    """Write a pydicom Dataset to a bucket and return hash.
 
     Parameters
     ----------
@@ -67,7 +68,11 @@ def write_dataset_to_blob(
     with BytesIO() as buf:
         dataset.save_as(buf)
         buf.seek(0)
+        hash = hashlib.md5(buf.getvalue()).hexdigest()
+        buf.seek(0)
         blob.upload_from_file(buf)
+
+    return hash
 
 
 def read_image_from_blob(
@@ -93,3 +98,20 @@ def read_image_from_blob(
     blob = bucket.get_blob(blob_name)
     im = np.array(Image.open(blob.open("rb")))
     return im
+
+
+def get_blob_uri(blob: storage.Blob):
+    """Return a GCS URI to this blob
+
+    Parameters
+    ----------
+    blob: storage.Blob
+        Blob whose URI is sought.
+
+    Returns
+    -------
+    str:
+        URI in the form `gs://...`
+
+    """
+    return f"gs://{blob.bucket.name}/{blob.name}"

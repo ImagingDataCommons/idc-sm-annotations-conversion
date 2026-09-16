@@ -1,4 +1,6 @@
 import datetime
+import hashlib
+from io import BytesIO
 from itertools import islice
 import logging
 from pathlib import Path
@@ -8,6 +10,7 @@ import click
 from google.cloud import storage
 import highdicom as hd
 import numpy as np
+import pandas as pd
 
 from idc_annotation_conversion import cloud_io, cloud_config
 from idc_annotation_conversion.catch import metadata_config
@@ -24,6 +27,9 @@ SLIDERUNNER_TYPE_GRAPHIC_TYPE_MAP = {
     2: hd.ann.GraphicTypeValues.RECTANGLE,  # guess, would need to check
     3: hd.ann.GraphicTypeValues.POLYGON,
 }
+
+
+COLLECTION_ID = "CATCH"
 
 
 @click.command()
@@ -110,9 +116,14 @@ def main(
         with db_file.open("wb") as f:
             annotations_db_blob.download_to_file(f)
 
+    source_file_hash = hashlib.md5(db_file.open("rb").read()).hexdigest()
+    source_file_url = cloud_io.get_blob_uri(annotations_db_blob)
+
     db = sqlite3.connect(db_file)
 
     slide_query = "SELECT uid, filename FROM Slides;"
+
+    manifest_rows = []
 
     for slide_id, slide_filename in islice(db.execute(slide_query), number):
 
@@ -214,12 +225,17 @@ def main(
 
         ann_name = slide_filename.replace(".svs", '_ann.dcm')
         im_name = slide_filename.replace(".svs", '_im.dcm')
+        instance_hash = ''
 
         # Store objects to filesystem
         if output_dir is not None:
             out_path = output_dir / ann_name
             logging.info(f"Writing annotation to {str(out_path)}.")
             ann_dcm.save_as(out_path)
+
+            instance_hash = hashlib.md5(
+                out_path.open('rb').read()
+            ).hexdigest()
 
             if store_wsi_dicom:
                 slide_path = output_dir / im_name
@@ -228,11 +244,12 @@ def main(
         # Store to bucket
         if output_bucket_obj is not None:
             logging.info("Writing objects to output bucket.")
-            cloud_io.write_dataset_to_blob(
+            instance_hash = cloud_io.write_dataset_to_blob(
                 ann_dcm,
                 output_bucket_obj,
                 ann_name,
             )
+
             if store_wsi_dicom:
                 cloud_io.write_dataset_to_blob(
                     image_dcm,
@@ -240,6 +257,34 @@ def main(
                     im_name,
                 )
 
+        manifest_rows.append(
+            {
+                "SOPInstanceUID": ann_dcm.SOPInstanceUID,
+                "collection_id": COLLECTION_ID,
+                "source_doi": metadata_config.DOI,
+                "relative_gcs_url": f'./{ann_name}',
+                "crdc_instance_uuid": '',
+                "operation": "addition",
+                "instance_hash": instance_hash,
+                "source_file_url": source_file_url,
+                "source_file_hash": source_file_hash,
+            }
+        )
+
+    manifest_df = pd.DataFrame(manifest_rows)
+
+    if output_bucket_obj is not None:
+        # Upload manifest
+        manifest_blob = output_bucket_obj.blob("manifest.csv")
+
+        with BytesIO() as buf:
+            manifest_df.to_csv(buf)
+            buf.seek(0)
+            manifest_blob.upload_from_file(buf)
+
+    if output_dir is not None:
+        manifest_path = output_dir / "manifest.csv"
+        manifest_df.to_csv(manifest_path)
 
 if __name__ == "__main__":
     main()

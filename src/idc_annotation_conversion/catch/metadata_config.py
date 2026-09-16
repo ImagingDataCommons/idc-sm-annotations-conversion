@@ -9,6 +9,9 @@ from idc_annotation_conversion.git_utils import (
     get_git_commit_hash,
 )
 
+
+DOI = '10.5281/zenodo.18526942'
+
 manufacturer = "Friedrich-Alexander-Universität converted by IDC"
 manufacturer_model_name = "Annotations"
 series_description = "Manual Region Annotations of Tumor and Tissue"
@@ -33,7 +36,7 @@ contributing_equipment = [
 
 clinical_trial_ids_item = pydicom.Dataset()
 clinical_trial_ids_item.IssuerOfClinicalTrialProtocolID = "DOI"
-clinical_trial_ids_item.ClinicalTrialProtocolID = "doi:10.5281/zenodo.19488392"
+clinical_trial_ids_item.ClinicalTrialProtocolID = f"doi:{DOI}"
 
 finding_codes = {
     "Bone": codes.SCT.Bone,
