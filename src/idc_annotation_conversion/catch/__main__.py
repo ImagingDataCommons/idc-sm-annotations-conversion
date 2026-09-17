@@ -29,7 +29,7 @@ SLIDERUNNER_TYPE_GRAPHIC_TYPE_MAP = {
 }
 
 
-COLLECTION_ID = "CATCH"
+COLLECTION_ID = "catch"
 
 
 @click.command()
@@ -278,13 +278,13 @@ def main(
         manifest_blob = output_bucket_obj.blob("manifest.csv")
 
         with BytesIO() as buf:
-            manifest_df.to_csv(buf)
+            manifest_df.to_csv(buf, index=False)
             buf.seek(0)
             manifest_blob.upload_from_file(buf)
 
     if output_dir is not None:
         manifest_path = output_dir / "manifest.csv"
-        manifest_df.to_csv(manifest_path)
+        manifest_df.to_csv(manifest_path, index=False)
 
 if __name__ == "__main__":
     main()
